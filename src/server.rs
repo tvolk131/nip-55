@@ -10,13 +10,13 @@ use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys};
 use std::task::Poll;
 
-pub struct Nip55Server {
+pub struct Nip55ServerTransport {
     transport_server: UnixDomainSocketServerTransport<Event, Event>,
     server_keypair: Keys,
 }
 
-impl Nip55Server {
-    /// Create a new `Nip55Server` and start listening for incoming
+impl Nip55ServerTransport {
+    /// Create a new `Nip55ServerTransport` and start listening for incoming
     /// connections. **MUST** be called from within a tokio runtime.
     pub fn connect_and_start(uds_address: String, server_keypair: Keys) -> std::io::Result<Self> {
         Ok(Self {
@@ -26,7 +26,7 @@ impl Nip55Server {
     }
 }
 
-impl futures::Stream for Nip55Server {
+impl futures::Stream for Nip55ServerTransport {
     type Item = (
         JsonRpcRequest,
         futures::channel::oneshot::Sender<JsonRpcResponse>,
@@ -92,4 +92,4 @@ impl futures::Stream for Nip55Server {
     }
 }
 
-impl JsonRpcServerTransport for Nip55Server {}
+impl JsonRpcServerTransport for Nip55ServerTransport {}
