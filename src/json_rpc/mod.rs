@@ -75,15 +75,16 @@ impl std::ops::Drop for JsonRpcServer {
     }
 }
 
-#[async_trait]
-pub trait JsonRpcClientTransport<E> {
-    async fn send_request(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, E>;
+// TODO: Uncomment this and have Nip55Client implement it.
+// #[async_trait]
+// pub trait JsonRpcClientTransport<E> {
+//     async fn send_request(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, E>;
 
-    async fn send_batch_request(
-        &self,
-        requests: Vec<JsonRpcRequest>,
-    ) -> Result<Vec<JsonRpcResponse>, E>;
-}
+//     async fn send_batch_request(
+//         &self,
+//         requests: Vec<JsonRpcRequest>,
+//     ) -> Result<Vec<JsonRpcResponse>, E>;
+// }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 enum JsonRpcVersion {
