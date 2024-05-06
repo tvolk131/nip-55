@@ -5,7 +5,7 @@ mod server;
 mod uds_req_res;
 
 pub use client::*;
-// pub use json_rpc::{JsonRpcRequest, JsonRpcResponse};
 pub use server::*;
+pub use uds_req_res::client::UdsClientError;
 
 // TODO: Test that the client and server can communicate with each other.
