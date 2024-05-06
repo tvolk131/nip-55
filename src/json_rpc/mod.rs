@@ -46,7 +46,7 @@ pub struct JsonRpcServer {
 }
 
 impl JsonRpcServer {
-    pub fn new(
+    pub fn start(
         mut transport: Box<dyn JsonRpcServerTransport>,
         handler: Box<dyn JsonRpcServerHandler>,
     ) -> Self {

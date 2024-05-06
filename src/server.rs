@@ -1,6 +1,7 @@
 use super::nip04_jsonrpc::{
     jsonrpc_response_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_request,
 };
+use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler};
 use crate::uds_req_res::UdsResponse;
 use crate::{
     json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport},
@@ -10,7 +11,27 @@ use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys};
 use std::task::Poll;
 
-pub struct Nip55ServerTransport {
+pub struct Nip55Server {
+    server: JsonRpcServer,
+}
+
+impl Nip55Server {
+    pub fn start(
+        uds_address: String,
+        server_keypair: Keys,
+        handler: Box<dyn JsonRpcServerHandler>,
+    ) -> std::io::Result<Self> {
+        let transport = Nip55ServerTransport::connect_and_start(uds_address, server_keypair)?;
+        let server = JsonRpcServer::start(Box::from(transport), handler);
+        Ok(Self { server })
+    }
+
+    pub fn stop(self) {
+        self.server.stop();
+    }
+}
+
+struct Nip55ServerTransport {
     transport_server: UnixDomainSocketServerTransport<Event, Event>,
     server_keypair: Keys,
 }
@@ -18,7 +39,7 @@ pub struct Nip55ServerTransport {
 impl Nip55ServerTransport {
     /// Create a new `Nip55ServerTransport` and start listening for incoming
     /// connections. **MUST** be called from within a tokio runtime.
-    pub fn connect_and_start(uds_address: String, server_keypair: Keys) -> std::io::Result<Self> {
+    fn connect_and_start(uds_address: String, server_keypair: Keys) -> std::io::Result<Self> {
         Ok(Self {
             transport_server: UnixDomainSocketServerTransport::connect_and_start(uds_address)?,
             server_keypair,
