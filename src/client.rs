@@ -7,6 +7,7 @@ use super::{
 use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse};
 use nostr_sdk::{Event, Keys, Kind, PublicKey};
 
+/// NIP-55 client that can make requests to a NIP-55 server.
 #[derive(Clone)]
 pub struct Nip55Client {
     uds_client_transport: UnixDomainSocketClientTransport,

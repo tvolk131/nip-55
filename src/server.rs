@@ -11,6 +11,7 @@ use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys};
 use std::task::Poll;
 
+/// NIP-55 server that can receive requests from a NIP-55 client.
 pub struct Nip55Server {
     server: JsonRpcServer,
 }
