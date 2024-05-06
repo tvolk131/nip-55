@@ -1,6 +1,6 @@
 [package]
 name = "nip-55"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Reference implementation of Nostr NIP-55"
