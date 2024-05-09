@@ -15,7 +15,10 @@ pub struct UnixDomainSocketServerTransport<Request: UdsRequest, Response: UdsRes
     uds_address: String,
 }
 
-impl JsonRpcServerTransport for UnixDomainSocketServerTransport<JsonRpcRequest, JsonRpcResponse> {}
+impl<Request: AsRef<JsonRpcRequest> + UdsRequest> JsonRpcServerTransport<Request>
+    for UnixDomainSocketServerTransport<Request, JsonRpcResponse>
+{
+}
 
 impl<Request: UdsRequest, Response: UdsResponse> std::ops::Drop
     for UnixDomainSocketServerTransport<Request, Response>

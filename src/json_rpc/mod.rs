@@ -3,21 +3,19 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub trait JsonRpcServerTransport:
-    futures::Stream<
-        Item = (
-            JsonRpcRequest,
-            futures::channel::oneshot::Sender<JsonRpcResponse>,
-        ),
-    > + Unpin
+pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest>>:
+    futures::Stream<Item = (Request, futures::channel::oneshot::Sender<JsonRpcResponse>)>
+    + Unpin
     + Send
     + Sync
 {
 }
 
 #[async_trait]
-pub trait JsonRpcServerHandler: Send + Sync {
-    async fn handle_request(&self, request: JsonRpcRequest) -> JsonRpcResponseData {
+pub trait JsonRpcServerHandler<Request: AsRef<JsonRpcRequest> + Send + 'static>:
+    Send + Sync
+{
+    async fn handle_request(&self, request: Request) -> JsonRpcResponseData {
         let mut responses = self.handle_batch_request(vec![request]).await;
 
         if responses.len() != 1 {
@@ -37,8 +35,7 @@ pub trait JsonRpcServerHandler: Send + Sync {
         responses.pop().unwrap()
     }
 
-    async fn handle_batch_request(&self, requests: Vec<JsonRpcRequest>)
-        -> Vec<JsonRpcResponseData>;
+    async fn handle_batch_request(&self, requests: Vec<Request>) -> Vec<JsonRpcResponseData>;
 }
 
 pub struct JsonRpcServer {
@@ -46,13 +43,13 @@ pub struct JsonRpcServer {
 }
 
 impl JsonRpcServer {
-    pub fn start(
-        mut transport: Box<dyn JsonRpcServerTransport>,
-        handler: Box<dyn JsonRpcServerHandler>,
+    pub fn start<Request: AsRef<JsonRpcRequest> + Send + 'static>(
+        mut transport: Box<dyn JsonRpcServerTransport<Request>>,
+        handler: Box<dyn JsonRpcServerHandler<Request>>,
     ) -> Self {
         let task_handle = tokio::spawn(async move {
             while let Some((request, response_sender)) = transport.next().await {
-                let request_id = request.id().clone();
+                let request_id = request.as_ref().id().clone();
                 let response =
                     JsonRpcResponse::new(handler.handle_request(request).await, request_id);
                 response_sender.send(response).unwrap();
@@ -99,6 +96,12 @@ pub struct JsonRpcRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     params: Option<JsonRpcStructuredValue>,
     id: JsonRpcId,
+}
+
+impl AsRef<JsonRpcRequest> for JsonRpcRequest {
+    fn as_ref(&self) -> &JsonRpcRequest {
+        self
+    }
 }
 
 impl UdsRequest for JsonRpcRequest {}

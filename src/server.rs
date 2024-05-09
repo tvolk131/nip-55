@@ -24,7 +24,7 @@ impl Nip55Server {
     pub fn start(
         uds_address: String,
         key_manager: Box<dyn KeyManager>,
-        handler: Box<dyn JsonRpcServerHandler>,
+        handler: Box<dyn JsonRpcServerHandler<JsonRpcRequest>>,
     ) -> std::io::Result<Self> {
         let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
         let server = JsonRpcServer::start(Box::from(transport), handler);
@@ -137,4 +137,4 @@ impl futures::Stream for Nip55ServerTransport {
     }
 }
 
-impl JsonRpcServerTransport for Nip55ServerTransport {}
+impl JsonRpcServerTransport<JsonRpcRequest> for Nip55ServerTransport {}
