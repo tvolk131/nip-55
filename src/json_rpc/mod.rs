@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest>>:
+pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest> = JsonRpcRequest>:
     futures::Stream<Item = (Request, futures::channel::oneshot::Sender<JsonRpcResponse>)>
     + Unpin
     + Send
@@ -12,7 +12,7 @@ pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest>>:
 }
 
 #[async_trait]
-pub trait JsonRpcServerHandler<Request: AsRef<JsonRpcRequest> + Send + 'static>:
+pub trait JsonRpcServerHandler<Request: AsRef<JsonRpcRequest> + Send + 'static = JsonRpcRequest>:
     Send + Sync
 {
     async fn handle_request(&self, request: Request) -> JsonRpcResponseData {
