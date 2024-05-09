@@ -24,7 +24,7 @@ impl Nip55Server {
     pub fn start(
         uds_address: String,
         key_manager: Box<dyn KeyManager>,
-        handler: Box<dyn JsonRpcServerHandler<JsonRpcRequest>>,
+        handler: Box<dyn JsonRpcServerHandler<(JsonRpcRequest, SecretKey)>>,
     ) -> std::io::Result<Self> {
         let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
         let server = JsonRpcServer::start(Box::from(transport), handler);
@@ -57,7 +57,7 @@ impl Nip55ServerTransport {
 
 impl futures::Stream for Nip55ServerTransport {
     type Item = (
-        JsonRpcRequest,
+        (JsonRpcRequest, SecretKey),
         futures::channel::oneshot::Sender<JsonRpcResponse>,
     );
 
@@ -86,13 +86,15 @@ impl futures::Stream for Nip55ServerTransport {
             }
         };
 
-        let user_keypair = match self.key_manager.get_secret_key(user_public_key) {
-            Some(user_secret_key) => Keys::new(user_secret_key),
+        let user_secret_key = match self.key_manager.get_secret_key(user_public_key) {
+            Some(user_secret_key) => user_secret_key,
             None => {
                 // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
                 return Poll::Pending;
             }
         };
+
+        let user_keypair = Keys::new(user_secret_key.clone());
 
         let request = match nip04_encrypted_event_to_jsonrpc_request(&request_event, &user_keypair)
         {
@@ -133,8 +135,14 @@ impl futures::Stream for Nip55ServerTransport {
                 .await;
         });
 
-        Poll::Ready(Some((request, response_sender)))
+        Poll::Ready(Some(((request, user_secret_key), response_sender)))
     }
 }
 
-impl JsonRpcServerTransport<JsonRpcRequest> for Nip55ServerTransport {}
+impl AsRef<JsonRpcRequest> for (JsonRpcRequest, SecretKey) {
+    fn as_ref(&self) -> &JsonRpcRequest {
+        &self.0
+    }
+}
+
+impl JsonRpcServerTransport<(JsonRpcRequest, SecretKey)> for Nip55ServerTransport {}
