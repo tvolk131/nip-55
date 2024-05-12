@@ -8,7 +8,7 @@ pub fn jsonrpc_request_to_nip04_encrypted_event(
     request: &JsonRpcRequest,
     client_keypair: &Keys,
     server_pubkey: PublicKey,
-) -> anyhow::Result<Event> {
+) -> Result<Event, nostr_sdk::event::builder::Error> {
     serialize_and_encrypt_nip04_event(kind, request, client_keypair, server_pubkey)
 }
 
@@ -17,7 +17,7 @@ pub fn jsonrpc_response_to_nip04_encrypted_event(
     response: &JsonRpcResponse,
     client_pubkey: PublicKey,
     server_keypair: &Keys,
-) -> anyhow::Result<Event> {
+) -> Result<Event, nostr_sdk::event::builder::Error> {
     serialize_and_encrypt_nip04_event(kind, response, server_keypair, client_pubkey)
 }
 
@@ -64,7 +64,7 @@ fn serialize_and_encrypt_nip04_event<T>(
     data: &T,
     sender_keypair: &Keys,
     recipient_pubkey: PublicKey,
-) -> anyhow::Result<Event>
+) -> Result<Event, nostr_sdk::event::builder::Error>
 where
     T: Serialize,
 {
