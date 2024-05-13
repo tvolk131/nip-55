@@ -52,7 +52,7 @@ impl Nip46OverNip55Client {
             .client
             .send_request(Kind::NostrConnect, &json_rpc_request, user_pubkey)
             .await
-            .map_err(|e| Nip46OverNip55ClientError::UdsClientError(e))?;
+            .map_err(Nip46OverNip55ClientError::UdsClientError)?;
 
         if let JsonRpcResponseData::Error { error } = response.data() {
             return Err(Nip46OverNip55ClientError::JsonRpcError(error.clone()));

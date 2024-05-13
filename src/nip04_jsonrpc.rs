@@ -36,7 +36,7 @@ pub fn nip04_encrypted_event_to_jsonrpc_request(
 
     let request: JsonRpcRequest =
         serde_json::from_value(Value::Object(jsonrpc_request_json_object))
-            .map_err(|e| NIP04DecryptionError::Json(e))?;
+            .map_err(NIP04DecryptionError::Json)?;
 
     Ok(request)
 }
@@ -56,7 +56,7 @@ pub fn nip04_encrypted_event_to_jsonrpc_response(
 
     let response: JsonRpcResponse =
         serde_json::from_value(Value::Object(jsonrpc_response_json_object))
-            .map_err(|e| NIP04DecryptionError::Json(e))?;
+            .map_err(NIP04DecryptionError::Json)?;
 
     Ok(response)
 }
@@ -70,7 +70,7 @@ fn serialize_and_encrypt_nip04_event<T>(
 where
     T: Serialize,
 {
-    Ok(EventBuilder::new(
+    EventBuilder::new(
         kind,
         nip04::encrypt(
             sender_keypair.secret_key()?,
@@ -79,7 +79,7 @@ where
         )?,
         [Tag::public_key(recipient_pubkey)],
     )
-    .to_event(sender_keypair)?)
+    .to_event(sender_keypair)
 }
 
 #[derive(Debug)]
@@ -97,20 +97,18 @@ fn decrypt_and_deserialize_nip04_event<T>(
 where
     T: serde::de::DeserializeOwned,
 {
-    event
-        .verify()
-        .map_err(|e| NIP04DecryptionError::EventError(e))?;
+    event.verify().map_err(NIP04DecryptionError::EventError)?;
 
     let decrypted_data = nip04::decrypt(
         recipient_keypair
             .secret_key()
-            .map_err(|e| NIP04DecryptionError::KeyError(e))?,
+            .map_err(NIP04DecryptionError::KeyError)?,
         &event.pubkey,
         &event.content,
     )
-    .map_err(|e| NIP04DecryptionError::Nip04Error(e))?;
+    .map_err(NIP04DecryptionError::Nip04Error)?;
 
-    serde_json::from_str(&decrypted_data).map_err(|e| NIP04DecryptionError::Json(e))
+    serde_json::from_str(&decrypted_data).map_err(NIP04DecryptionError::Json)
 }
 
 // TODO: More thoroughly test this module. Specifically error/edge cases.
