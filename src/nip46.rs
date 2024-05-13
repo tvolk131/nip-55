@@ -81,12 +81,18 @@ pub struct Nip46OverNip55Server {
 
 impl Nip46OverNip55Server {
     /// Start a new NIP-46 server with NIP-55 as the trasnsport that will listen for incoming connections at the specified Unix domain socket address.
-    pub fn start(uds_address: String, key_manager: Box<dyn KeyManager>) -> std::io::Result<Self> {
+    pub fn start(
+        uds_address: String,
+        key_manager: Box<dyn KeyManager>,
+        request_approver_or: Option<Box<dyn Nip46RequestApprover>>,
+    ) -> std::io::Result<Self> {
         Ok(Self {
             server: Nip55Server::start(
                 uds_address,
                 key_manager,
-                Box::from(Nip46OverNip55ServerHandler {}),
+                Box::from(Nip46OverNip55ServerHandler {
+                    request_approver_or,
+                }),
             )?,
         })
     }
@@ -98,7 +104,25 @@ impl Nip46OverNip55Server {
     }
 }
 
-struct Nip46OverNip55ServerHandler {}
+/// Trait to approve or reject NIP-46 requests received by the server.
+#[async_trait]
+pub trait Nip46RequestApprover: Send + Sync {
+    /// Approve or reject a batch of NIP-46 requests received by the server.
+    async fn handle_batch_request(
+        &self,
+        requests: Vec<(nip46::Request, PublicKey)>,
+    ) -> Nip46RequestApproval;
+}
+
+/// Approval or rejection of a NIP-46 request. Used in the server to determine whether to handle requests or not.
+pub enum Nip46RequestApproval {
+    Approve,
+    Reject,
+}
+
+struct Nip46OverNip55ServerHandler {
+    request_approver_or: Option<Box<dyn Nip46RequestApprover>>,
+}
 
 #[async_trait]
 impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerHandler {
@@ -106,12 +130,48 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
         &self,
         requests: Vec<(JsonRpcRequest, SecretKey)>,
     ) -> Vec<JsonRpcResponseData> {
-        requests
+        let nip46_requests: Vec<Option<(nip46::Request, SecretKey, String)>> = requests
             .into_iter()
             .map(|(request, user_secret_key)| {
-                let (nip46_request, nip46_request_id) = match (&request).try_into() {
-                    Ok((nip46_request, nip46_request_id)) => (nip46_request, nip46_request_id),
-                    Err(_) => {
+                (&request)
+                    .try_into()
+                    .ok()
+                    .map(|(nip46_request, nip46_request_id)| {
+                        (nip46_request, user_secret_key, nip46_request_id)
+                    })
+            })
+            .collect();
+
+        let secp = nostr_sdk::secp256k1::Secp256k1::new();
+
+        let approval = match &self.request_approver_or {
+            Some(request_approver) => {
+                request_approver
+                    .handle_batch_request(
+                        nip46_requests
+                            .iter()
+                            .flatten()
+                            .cloned()
+                            .map(|(nip46_request, user_secret_key, _nip46_request_id)| {
+                                (
+                                    nip46_request,
+                                    user_secret_key.x_only_public_key(&secp).0.into(),
+                                )
+                            })
+                            .collect(),
+                    )
+                    .await
+            }
+            None => Nip46RequestApproval::Approve,
+        };
+
+        nip46_requests
+            .into_iter()
+            .map(|request_with_data_or| {
+                let (nip46_request, user_secret_key, nip46_request_id) = match request_with_data_or
+                {
+                    Some(request_with_data) => request_with_data,
+                    None => {
                         return JsonRpcResponseData::Error {
                             error: JsonRpcError::new(
                                 JsonRpcErrorCode::InvalidRequest,
@@ -121,6 +181,16 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
                         }
                     }
                 };
+
+                if let Nip46RequestApproval::Reject = approval {
+                    return JsonRpcResponseData::Error {
+                        error: JsonRpcError::new(
+                            JsonRpcErrorCode::InternalError,
+                            "Batch request rejected".to_string(),
+                            None,
+                        ),
+                    };
+                }
 
                 let nip46_response = match nip46_request {
                     nip46::Request::SignEvent(unsigned_event) => nip46::ResponseResult::SignEvent(
@@ -269,7 +339,7 @@ mod tests {
         let key_manager =
             MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
         let server =
-            Nip46OverNip55Server::start("/tmp/test.sock".to_string(), Box::new(key_manager))
+            Nip46OverNip55Server::start("/tmp/test.sock".to_string(), Box::new(key_manager), None)
                 .expect("Failed to start NIP-46 over NIP-55 server");
 
         let client = Nip46OverNip55Client::new("/tmp/test.sock".to_string());
