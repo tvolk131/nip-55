@@ -84,15 +84,13 @@ impl Nip46OverNip55Server {
     pub fn start(
         uds_address: impl Into<String>,
         key_manager: Box<dyn KeyManager>,
-        request_approver_or: Option<Box<dyn Nip46RequestApprover>>,
+        request_approver: Box<dyn Nip46RequestApprover>,
     ) -> std::io::Result<Self> {
         Ok(Self {
             server: Nip55Server::start(
                 uds_address,
                 key_manager,
-                Box::from(Nip46OverNip55ServerHandler {
-                    request_approver_or,
-                }),
+                Box::from(Nip46OverNip55ServerHandler { request_approver }),
             )?,
         })
     }
@@ -114,14 +112,46 @@ pub trait Nip46RequestApprover: Send + Sync {
     ) -> Nip46RequestApproval;
 }
 
+/// A simple request approver that either always approves or always rejects requests.
+pub struct StaticRequestApprover {
+    approval: Nip46RequestApproval,
+}
+
+impl StaticRequestApprover {
+    /// Create a new `StaticRequestApprover` that will always immediately approve requests.
+    pub fn always_approve() -> Self {
+        Self {
+            approval: Nip46RequestApproval::Approve,
+        }
+    }
+
+    /// Create a new `StaticRequestApprover` that will always immediately reject requests.
+    pub fn always_reject() -> Self {
+        Self {
+            approval: Nip46RequestApproval::Reject,
+        }
+    }
+}
+
+#[async_trait]
+impl Nip46RequestApprover for StaticRequestApprover {
+    async fn handle_batch_request(
+        &self,
+        _requests: Vec<(nip46::Request, PublicKey)>,
+    ) -> Nip46RequestApproval {
+        self.approval
+    }
+}
+
 /// Approval or rejection of a NIP-46 request. Used in the server to determine whether to handle requests or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Nip46RequestApproval {
     Approve,
     Reject,
 }
 
 struct Nip46OverNip55ServerHandler {
-    request_approver_or: Option<Box<dyn Nip46RequestApprover>>,
+    request_approver: Box<dyn Nip46RequestApprover>,
 }
 
 #[async_trait]
@@ -144,26 +174,22 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
 
         let secp = nostr_sdk::secp256k1::Secp256k1::new();
 
-        let approval = match &self.request_approver_or {
-            Some(request_approver) => {
-                request_approver
-                    .handle_batch_request(
-                        nip46_requests
-                            .iter()
-                            .flatten()
-                            .cloned()
-                            .map(|(nip46_request, user_secret_key, _nip46_request_id)| {
-                                (
-                                    nip46_request,
-                                    user_secret_key.x_only_public_key(&secp).0.into(),
-                                )
-                            })
-                            .collect(),
-                    )
-                    .await
-            }
-            None => Nip46RequestApproval::Approve,
-        };
+        let approval = self
+            .request_approver
+            .handle_batch_request(
+                nip46_requests
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(|(nip46_request, user_secret_key, _nip46_request_id)| {
+                        (
+                            nip46_request,
+                            user_secret_key.x_only_public_key(&secp).0.into(),
+                        )
+                    })
+                    .collect(),
+            )
+            .await;
 
         nip46_requests
             .into_iter()
@@ -338,9 +364,12 @@ mod tests {
         let keypair = Keys::generate();
         let key_manager =
             MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
-        let server =
-            Nip46OverNip55Server::start("/tmp/test.sock".to_string(), Box::new(key_manager), None)
-                .expect("Failed to start NIP-46 over NIP-55 server");
+        let server = Nip46OverNip55Server::start(
+            "/tmp/test.sock".to_string(),
+            Box::new(key_manager),
+            Box::new(StaticRequestApprover::always_approve()),
+        )
+        .expect("Failed to start NIP-46 over NIP-55 server");
 
         let client = Nip46OverNip55Client::new("/tmp/test.sock".to_string());
 
