@@ -90,7 +90,7 @@ impl Nip46OverNip55Server {
             server: Nip55Server::start(
                 uds_address,
                 key_manager,
-                Box::from(Nip46OverNip55ServerHandler { request_approver }),
+                Nip46OverNip55ServerHandler { request_approver },
             )?,
         })
     }
