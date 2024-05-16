@@ -44,8 +44,8 @@ pub struct JsonRpcServer {
 
 impl JsonRpcServer {
     pub fn start<Request: AsRef<JsonRpcRequest> + Send + 'static>(
-        mut transport: Box<dyn JsonRpcServerTransport<Request>>,
-        handler: Box<dyn JsonRpcServerHandler<Request>>,
+        mut transport: impl JsonRpcServerTransport<Request> + 'static,
+        handler: impl JsonRpcServerHandler<Request> + 'static,
     ) -> Self {
         let task_handle = tokio::spawn(async move {
             while let Some((request, response_sender)) = transport.next().await {

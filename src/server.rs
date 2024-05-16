@@ -9,6 +9,7 @@ use crate::{
 };
 use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys, PublicKey, SecretKey};
+use std::sync::Arc;
 use std::task::Poll;
 
 pub trait KeyManager: Send + Sync {
@@ -23,11 +24,11 @@ pub struct Nip55Server {
 impl Nip55Server {
     pub fn start(
         uds_address: impl Into<String>,
-        key_manager: Box<dyn KeyManager>,
-        handler: Box<dyn JsonRpcServerHandler<(JsonRpcRequest, SecretKey)>>,
+        key_manager: Arc<dyn KeyManager>,
+        handler: impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> + 'static,
     ) -> std::io::Result<Self> {
         let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
-        let server = JsonRpcServer::start(Box::from(transport), handler);
+        let server = JsonRpcServer::start(transport, handler);
         Ok(Self { server })
     }
 
@@ -38,7 +39,7 @@ impl Nip55Server {
 
 struct Nip55ServerTransport {
     transport_server: UnixDomainSocketServerTransport<Event, Event>,
-    key_manager: Box<dyn KeyManager>,
+    key_manager: Arc<dyn KeyManager>,
 }
 
 impl Nip55ServerTransport {
@@ -46,7 +47,7 @@ impl Nip55ServerTransport {
     /// connections. **MUST** be called from within a tokio runtime.
     fn connect_and_start(
         uds_address: impl Into<String>,
-        key_manager: Box<dyn KeyManager>,
+        key_manager: Arc<dyn KeyManager>,
     ) -> std::io::Result<Self> {
         Ok(Self {
             transport_server: UnixDomainSocketServerTransport::connect_and_start(uds_address)?,
