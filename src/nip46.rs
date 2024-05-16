@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use nostr_sdk::{nips::nip46, Keys, PublicKey};
 use nostr_sdk::{Kind, SecretKey};
 use serde_json::Value;
+use std::sync::Arc;
 
 /// NIP-46 client that can make requests to a NIP-46 server running over NIP-55.
 pub struct Nip46OverNip55Client {
@@ -83,8 +84,8 @@ impl Nip46OverNip55Server {
     /// Start a new NIP-46 server with NIP-55 as the trasnsport that will listen for incoming connections at the specified Unix domain socket address.
     pub fn start(
         uds_address: impl Into<String>,
-        key_manager: Box<dyn KeyManager>,
-        request_approver: Box<dyn Nip46RequestApprover>,
+        key_manager: Arc<dyn KeyManager>,
+        request_approver: Arc<dyn Nip46RequestApprover>,
     ) -> std::io::Result<Self> {
         Ok(Self {
             server: Nip55Server::start(
@@ -151,7 +152,7 @@ pub enum Nip46RequestApproval {
 }
 
 struct Nip46OverNip55ServerHandler {
-    request_approver: Box<dyn Nip46RequestApprover>,
+    request_approver: Arc<dyn Nip46RequestApprover>,
 }
 
 #[async_trait]
@@ -366,8 +367,8 @@ mod tests {
             MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
         let server = Nip46OverNip55Server::start(
             "/tmp/test.sock".to_string(),
-            Box::new(key_manager),
-            Box::new(StaticRequestApprover::always_approve()),
+            Arc::new(key_manager),
+            Arc::new(StaticRequestApprover::always_approve()),
         )
         .expect("Failed to start NIP-46 over NIP-55 server");
 
