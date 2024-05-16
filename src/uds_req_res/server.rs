@@ -37,7 +37,9 @@ impl<Request: UdsRequest, Response: UdsResponse>
 {
     /// Create a new `UnixDomainSocketServerTransport` and start listening for incoming
     /// connections. **MUST** be called from within a tokio runtime.
-    pub fn connect_and_start(uds_address: String) -> std::io::Result<Self> {
+    pub fn connect_and_start(uds_address: impl Into<String>) -> std::io::Result<Self> {
+        let uds_address = uds_address.into();
+
         if Path::new(&uds_address).exists() {
             std::fs::remove_file(&uds_address)?;
         }

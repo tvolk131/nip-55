@@ -8,8 +8,10 @@ pub struct UnixDomainSocketClientTransport {
 }
 
 impl UnixDomainSocketClientTransport {
-    pub fn new(uds_address: String) -> Self {
-        Self { uds_address }
+    pub fn new(uds_address: impl Into<String>) -> Self {
+        Self {
+            uds_address: uds_address.into(),
+        }
     }
 
     pub async fn send_request<Request: UdsRequest, Response: UdsResponse>(

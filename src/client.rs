@@ -15,7 +15,7 @@ pub struct Nip55Client {
 
 // TODO: Support batch requests.
 impl Nip55Client {
-    pub fn new(uds_address: String) -> Self {
+    pub fn new(uds_address: impl Into<String>) -> Self {
         Self {
             uds_client_transport: UnixDomainSocketClientTransport::new(uds_address),
         }

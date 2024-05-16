@@ -22,7 +22,7 @@ pub struct Nip55Server {
 
 impl Nip55Server {
     pub fn start(
-        uds_address: String,
+        uds_address: impl Into<String>,
         key_manager: Box<dyn KeyManager>,
         handler: Box<dyn JsonRpcServerHandler<(JsonRpcRequest, SecretKey)>>,
     ) -> std::io::Result<Self> {
@@ -45,7 +45,7 @@ impl Nip55ServerTransport {
     /// Create a new `Nip55ServerTransport` and start listening for incoming
     /// connections. **MUST** be called from within a tokio runtime.
     fn connect_and_start(
-        uds_address: String,
+        uds_address: impl Into<String>,
         key_manager: Box<dyn KeyManager>,
     ) -> std::io::Result<Self> {
         Ok(Self {

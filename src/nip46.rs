@@ -17,7 +17,7 @@ pub struct Nip46OverNip55Client {
 
 impl Nip46OverNip55Client {
     /// Create a new NIP-46 client that will communicate with a NIP-46 server over NIP-55 on the specified Unix domain socket address.
-    pub fn new(uds_address: String) -> Self {
+    pub fn new(uds_address: impl Into<String>) -> Self {
         Self {
             client: Nip55Client::new(uds_address),
         }
@@ -82,7 +82,7 @@ pub struct Nip46OverNip55Server {
 impl Nip46OverNip55Server {
     /// Start a new NIP-46 server with NIP-55 as the trasnsport that will listen for incoming connections at the specified Unix domain socket address.
     pub fn start(
-        uds_address: String,
+        uds_address: impl Into<String>,
         key_manager: Box<dyn KeyManager>,
         request_approver_or: Option<Box<dyn Nip46RequestApprover>>,
     ) -> std::io::Result<Self> {
