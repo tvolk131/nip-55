@@ -2,11 +2,11 @@ name: CI
 
 on:
   push:
-    branches:
-      - "**" # Pushes to any branch
+    branches: ["main"]
   pull_request:
-    branches:
-      - "**" # Pull requests to any branch
+    branches: ["main"]
+  merge_group:
+    branches: ["main"]
 
 jobs:
   test:
