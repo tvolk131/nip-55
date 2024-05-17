@@ -9,6 +9,7 @@ use crate::{
 };
 use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys, PublicKey, SecretKey};
+use std::ops::Deref;
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -21,10 +22,16 @@ pub struct Nip55Server {
     server: JsonRpcServer,
 }
 
+// TODO: Once trait aliases are stable, create one for:
+// Deref<Target = dyn KeyManager> + Send + Sync + Unpin
+// and use it in throughout codebase. Also check for other
+// places where we use `Deref` and try to replace them with
+// trait aliases as well.
+
 impl Nip55Server {
     pub fn start(
         uds_address: impl Into<String>,
-        key_manager: Arc<dyn KeyManager>,
+        key_manager: impl Deref<Target = dyn KeyManager> + Send + Sync + Unpin + 'static,
         handler: impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> + 'static,
     ) -> std::io::Result<Self> {
         let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
@@ -37,18 +44,15 @@ impl Nip55Server {
     }
 }
 
-struct Nip55ServerTransport {
+struct Nip55ServerTransport<KM: Deref<Target = dyn KeyManager>> {
     transport_server: UnixDomainSocketServerTransport<Event, Event>,
-    key_manager: Arc<dyn KeyManager>,
+    key_manager: KM,
 }
 
-impl Nip55ServerTransport {
+impl<KM: Deref<Target = dyn KeyManager>> Nip55ServerTransport<KM> {
     /// Create a new `Nip55ServerTransport` and start listening for incoming
     /// connections. **MUST** be called from within a tokio runtime.
-    fn connect_and_start(
-        uds_address: impl Into<String>,
-        key_manager: Arc<dyn KeyManager>,
-    ) -> std::io::Result<Self> {
+    fn connect_and_start(uds_address: impl Into<String>, key_manager: KM) -> std::io::Result<Self> {
         Ok(Self {
             transport_server: UnixDomainSocketServerTransport::connect_and_start(uds_address)?,
             key_manager,
@@ -56,7 +60,7 @@ impl Nip55ServerTransport {
     }
 }
 
-impl futures::Stream for Nip55ServerTransport {
+impl<KM: Deref<Target = dyn KeyManager> + Unpin> futures::Stream for Nip55ServerTransport<KM> {
     type Item = (
         (JsonRpcRequest, SecretKey),
         futures::channel::oneshot::Sender<JsonRpcResponse>,
@@ -128,4 +132,7 @@ impl AsRef<JsonRpcRequest> for (JsonRpcRequest, SecretKey) {
     }
 }
 
-impl JsonRpcServerTransport<(JsonRpcRequest, SecretKey)> for Nip55ServerTransport {}
+impl<KM: Deref<Target = dyn KeyManager> + Send + Sync + Unpin>
+    JsonRpcServerTransport<(JsonRpcRequest, SecretKey)> for Nip55ServerTransport<KM>
+{
+}

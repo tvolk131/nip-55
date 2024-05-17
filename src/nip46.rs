@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use nostr_sdk::{nips::nip46, Keys, PublicKey};
 use nostr_sdk::{Kind, SecretKey};
 use serde_json::Value;
+use std::ops::Deref;
 use std::sync::Arc;
 
 /// NIP-46 client that can make requests to a NIP-46 server running over NIP-55.
@@ -84,8 +85,8 @@ impl Nip46OverNip55Server {
     /// Start a new NIP-46 server with NIP-55 as the trasnsport that will listen for incoming connections at the specified Unix domain socket address.
     pub fn start(
         uds_address: impl Into<String>,
-        key_manager: Arc<dyn KeyManager>,
-        request_approver: Arc<dyn Nip46RequestApprover>,
+        key_manager: impl Deref<Target = dyn KeyManager> + Send + Sync + Unpin + 'static,
+        request_approver: impl Deref<Target = dyn Nip46RequestApprover> + Send + Sync + 'static,
     ) -> std::io::Result<Self> {
         Ok(Self {
             server: Nip55Server::start(
@@ -151,12 +152,14 @@ pub enum Nip46RequestApproval {
     Reject,
 }
 
-struct Nip46OverNip55ServerHandler {
-    request_approver: Arc<dyn Nip46RequestApprover>,
+struct Nip46OverNip55ServerHandler<RA: Deref<Target = dyn Nip46RequestApprover> + Send + Sync> {
+    request_approver: RA,
 }
 
 #[async_trait]
-impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerHandler {
+impl<RA: Deref<Target = dyn Nip46RequestApprover> + Send + Sync>
+    JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerHandler<RA>
+{
     async fn handle_batch_request(
         &self,
         requests: Vec<(JsonRpcRequest, SecretKey)>,
@@ -364,8 +367,8 @@ mod tests {
             MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
         let server = Nip46OverNip55Server::start(
             "/tmp/test.sock".to_string(),
-            Arc::new(key_manager),
-            Arc::new(StaticRequestApprover::always_approve()),
+            Arc::new(key_manager) as Arc<dyn KeyManager>,
+            Arc::new(StaticRequestApprover::always_approve()) as Arc<dyn Nip46RequestApprover>,
         )
         .expect("Failed to start NIP-46 over NIP-55 server");
 
