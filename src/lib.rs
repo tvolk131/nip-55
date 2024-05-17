@@ -1,3 +1,9 @@
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+
 mod client;
 pub mod json_rpc;
 mod nip04_jsonrpc;
