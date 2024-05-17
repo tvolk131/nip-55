@@ -195,18 +195,15 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
         nip46_requests
             .into_iter()
             .map(|request_with_data_or| {
-                let (nip46_request, user_secret_key, nip46_request_id) = match request_with_data_or
-                {
-                    Some(request_with_data) => request_with_data,
-                    None => {
-                        return JsonRpcResponseData::Error {
-                            error: JsonRpcError::new(
-                                JsonRpcErrorCode::InvalidRequest,
-                                "Request is not a valid NIP-46 request".to_string(),
-                                None,
-                            ),
-                        }
-                    }
+                let Some((nip46_request, user_secret_key, nip46_request_id)) = request_with_data_or
+                else {
+                    return JsonRpcResponseData::Error {
+                        error: JsonRpcError::new(
+                            JsonRpcErrorCode::InvalidRequest,
+                            "Request is not a valid NIP-46 request".to_string(),
+                            None,
+                        ),
+                    };
                 };
 
                 if let Nip46RequestApproval::Reject = approval {
@@ -303,7 +300,7 @@ impl TryFrom<&JsonRpcResponse> for nip46::ResponseResult {
                 (None, Some(error)) => Err(anyhow::anyhow!(error)),
                 _ => Err(anyhow::anyhow!("Invalid NIP-46 response")),
             },
-            _ => Err(anyhow::anyhow!("Invalid NIP-46 response")),
+            nip46::Message::Request { .. } => Err(anyhow::anyhow!("Invalid NIP-46 response")),
         }
     }
 }

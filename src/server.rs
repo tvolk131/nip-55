@@ -71,36 +71,28 @@ impl futures::Stream for Nip55ServerTransport {
             Poll::Ready(Some((request_event, response_event_sender))) => {
                 (request_event, response_event_sender)
             }
-            Poll::Ready(None) => return Poll::Pending,
-            Poll::Pending => return Poll::Pending,
+            Poll::Ready(None) | Poll::Pending => return Poll::Pending,
         };
 
         let request_event_kind = request_event.kind();
         let request_event_author = request_event.author();
 
         // TODO: Should we attempt to NIP-04 decrypt the request for all public keys rather than just the first one?
-        let user_public_key = match request_event.public_keys().next() {
-            Some(user_public_key) => user_public_key,
-            None => {
-                // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
-                return Poll::Pending;
-            }
+        let Some(user_public_key) = request_event.public_keys().next() else {
+            // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
+            return Poll::Pending;
         };
 
-        let user_secret_key = match self.key_manager.get_secret_key(user_public_key) {
-            Some(user_secret_key) => user_secret_key,
-            None => {
-                // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
-                return Poll::Pending;
-            }
+        let Some(user_secret_key) = self.key_manager.get_secret_key(user_public_key) else {
+            // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
+            return Poll::Pending;
         };
 
         let user_keypair = Keys::new(user_secret_key.clone());
 
-        let request = match nip04_encrypted_event_to_jsonrpc_request(&request_event, &user_keypair)
-        {
-            Ok(request) => request,
-            Err(_) => return Poll::Pending,
+        let Ok(request) = nip04_encrypted_event_to_jsonrpc_request(&request_event, &user_keypair)
+        else {
+            return Poll::Pending;
         };
 
         let (response_sender, response_receiver) = futures::channel::oneshot::channel();
@@ -108,30 +100,20 @@ impl futures::Stream for Nip55ServerTransport {
         tokio::spawn(async move {
             response_receiver
                 .then(|response| async {
-                    match response {
-                        Ok(response) => {
-                            let response_event = jsonrpc_response_to_nip04_encrypted_event(
-                                request_event_kind,
-                                &response,
-                                request_event_author,
-                                &user_keypair,
-                            )
-                            .unwrap();
-                            response_event_sender.send(response_event).unwrap();
-                        }
-                        Err(_) => {
-                            let response_event = jsonrpc_response_to_nip04_encrypted_event(
-                                request_event_kind,
-                                &JsonRpcResponse::internal_error_response(
-                                    "Internal error.".to_string(),
-                                ),
-                                request_event_author,
-                                &user_keypair,
-                            )
-                            .unwrap();
-                            response_event_sender.send(response_event).unwrap();
-                        }
-                    }
+                    let response = if let Ok(response) = response {
+                        response
+                    } else {
+                        JsonRpcResponse::internal_error_response("Internal error.".to_string())
+                    };
+
+                    let response_event = jsonrpc_response_to_nip04_encrypted_event(
+                        request_event_kind,
+                        &response,
+                        request_event_author,
+                        &user_keypair,
+                    )
+                    .unwrap();
+                    response_event_sender.send(response_event).unwrap();
                 })
                 .await;
         });

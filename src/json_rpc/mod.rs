@@ -162,7 +162,9 @@ impl<'de> Deserialize<'de> for JsonRpcId {
     {
         serde_json::Value::deserialize(deserializer).and_then(|value| {
             if value.is_i64() {
-                Ok(JsonRpcId::Number(value.as_i64().unwrap() as i32))
+                Ok(JsonRpcId::Number(
+                    i32::try_from(value.as_i64().unwrap()).unwrap(),
+                ))
             } else if value.is_string() {
                 Ok(JsonRpcId::String(value.as_str().unwrap().to_string()))
             } else if value.is_null() {

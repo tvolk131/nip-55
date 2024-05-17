@@ -57,15 +57,12 @@ impl<Request: UdsRequest, Response: UdsResponse>
                     tokio::spawn(async move {
                         let mut buf = Vec::new();
                         socket.read_to_end(&mut buf).await?;
-                        let request = match serde_json::from_slice::<Request>(&buf) {
-                            Ok(request) => request,
-                            Err(_) => {
-                                return Self::send_response_to_socket(
-                                    socket,
-                                    Response::request_parse_error_response(),
-                                )
-                                .await;
-                            }
+                        let Ok(request) = serde_json::from_slice::<Request>(&buf) else {
+                            return Self::send_response_to_socket(
+                                socket,
+                                Response::request_parse_error_response(),
+                            )
+                            .await;
                         };
 
                         let (tx, rx) = futures::channel::oneshot::channel();
