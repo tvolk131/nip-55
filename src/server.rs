@@ -2,7 +2,6 @@ use super::nip04_jsonrpc::{
     jsonrpc_response_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_request,
 };
 use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler};
-use crate::uds_req_res::UdsResponse;
 use crate::{
     json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport},
     uds_req_res::server::UnixDomainSocketServerTransport,
@@ -100,20 +99,16 @@ impl futures::Stream for Nip55ServerTransport {
         tokio::spawn(async move {
             response_receiver
                 .then(|response| async {
-                    let response = if let Ok(response) = response {
-                        response
-                    } else {
-                        JsonRpcResponse::internal_error_response("Internal error.".to_string())
-                    };
-
-                    let response_event = jsonrpc_response_to_nip04_encrypted_event(
-                        request_event_kind,
-                        &response,
-                        request_event_author,
-                        &user_keypair,
-                    )
-                    .unwrap();
-                    response_event_sender.send(response_event).unwrap();
+                    if let Ok(response) = response {
+                        let response_event = jsonrpc_response_to_nip04_encrypted_event(
+                            request_event_kind,
+                            &response,
+                            request_event_author,
+                            &user_keypair,
+                        )
+                        .unwrap();
+                        response_event_sender.send(response_event).unwrap();
+                    }
                 })
                 .await;
         });

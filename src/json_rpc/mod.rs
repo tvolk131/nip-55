@@ -213,19 +213,6 @@ impl UdsResponse for JsonRpcResponse {
             JsonRpcId::Null,
         )
     }
-
-    fn internal_error_response(msg: String) -> Self {
-        Self::new(
-            JsonRpcResponseData::Error {
-                error: JsonRpcError {
-                    code: JsonRpcErrorCode::InternalError,
-                    message: msg,
-                    data: None,
-                },
-            },
-            JsonRpcId::Null,
-        )
-    }
 }
 
 impl JsonRpcResponse {
