@@ -15,26 +15,6 @@ pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest> = JsonRpcRequest
 pub trait JsonRpcServerHandler<Request: AsRef<JsonRpcRequest> + Send + 'static = JsonRpcRequest>:
     Send + Sync
 {
-    async fn handle_request(&self, request: Request) -> JsonRpcResponseData {
-        let mut responses = self.handle_batch_request(vec![request]).await;
-
-        if responses.len() != 1 {
-            return JsonRpcResponseData::Error {
-                error: JsonRpcError {
-                    code: JsonRpcErrorCode::InternalError,
-                    message: format!(
-                        "Internal error: Batch handler returned {} responses instead of 1",
-                        responses.len()
-                    ),
-                    data: None,
-                },
-            };
-        }
-
-        // Unwrap is safe because we just checked that the length is 1.
-        responses.pop().unwrap()
-    }
-
     async fn handle_batch_request(&self, requests: Vec<Request>) -> Vec<JsonRpcResponseData>;
 }
 
@@ -50,9 +30,30 @@ impl JsonRpcServer {
         let task_handle = tokio::spawn(async move {
             while let Some((request, response_sender)) = transport.next().await {
                 let request_id = request.as_ref().id().clone();
-                let response =
-                    JsonRpcResponse::new(handler.handle_request(request).await, request_id);
-                response_sender.send(response).unwrap();
+
+                let response_data = {
+                    let mut responses = handler.handle_batch_request(vec![request]).await;
+
+                    if responses.len() != 1 {
+                        JsonRpcResponseData::Error {
+                            error: JsonRpcError {
+                                code: JsonRpcErrorCode::InternalError,
+                                message: format!(
+                        "Internal error: Batch handler returned {} responses instead of 1",
+                        responses.len()
+                    ),
+                                data: None,
+                            },
+                        }
+                    } else {
+                        // Unwrap is safe because we just checked that the length is 1.
+                        responses.pop().unwrap()
+                    }
+                };
+
+                response_sender
+                    .send(JsonRpcResponse::new(response_data, request_id))
+                    .unwrap();
             }
         });
 
