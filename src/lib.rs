@@ -7,7 +7,7 @@
 mod client;
 pub mod json_rpc;
 mod nip04_jsonrpc;
-pub mod nip46;
+pub mod nip_46;
 mod server;
 mod uds_req_res;
 
