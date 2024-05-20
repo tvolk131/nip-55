@@ -1,7 +1,7 @@
 use crate::{
     json_rpc::{
         JsonRpcError, JsonRpcErrorCode, JsonRpcRequest, JsonRpcResponse, JsonRpcResponseData,
-        JsonRpcServerHandler,
+        JsonRpcServerHandler, SingleOrBatch,
     },
     KeyManager, Nip55Client, Nip55Server, UdsClientError,
 };
@@ -49,11 +49,20 @@ impl Nip46OverNip55Client {
             Nip46OverNip55ClientError::UdsClientError(UdsClientError::RequestSerializationError)
         })?;
 
-        let response = self
+        let SingleOrBatch::Single(response) = self
             .client
-            .send_request(Kind::NostrConnect, &json_rpc_request, user_pubkey)
+            .send_request(
+                Kind::NostrConnect,
+                &SingleOrBatch::Single(json_rpc_request),
+                user_pubkey,
+            )
             .await
-            .map_err(Nip46OverNip55ClientError::UdsClientError)?;
+            .map_err(Nip46OverNip55ClientError::UdsClientError)?
+        else {
+            return Err(Nip46OverNip55ClientError::UdsClientError(
+                UdsClientError::MalformedResponse,
+            ));
+        };
 
         if let JsonRpcResponseData::Error { error } = response.data() {
             return Err(Nip46OverNip55ClientError::JsonRpcError(error.clone()));
@@ -109,7 +118,7 @@ pub trait Nip46RequestApprover: Send + Sync {
     /// Approve or reject a batch of NIP-46 requests received by the server.
     async fn handle_batch_request(
         &self,
-        requests: Vec<(nip46::Request, PublicKey)>,
+        requests: (Vec<nip46::Request>, PublicKey),
     ) -> Nip46RequestApproval;
 }
 
@@ -138,7 +147,7 @@ impl StaticRequestApprover {
 impl Nip46RequestApprover for StaticRequestApprover {
     async fn handle_batch_request(
         &self,
-        _requests: Vec<(nip46::Request, PublicKey)>,
+        _requests: (Vec<nip46::Request>, PublicKey),
     ) -> Nip46RequestApproval {
         self.approval
     }
@@ -155,48 +164,36 @@ struct Nip46OverNip55ServerHandler {
     request_approver: Arc<dyn Nip46RequestApprover>,
 }
 
-#[async_trait]
-impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerHandler {
-    async fn handle_batch_request(
+impl Nip46OverNip55ServerHandler {
+    async fn handle_request_array(
         &self,
-        requests: Vec<(JsonRpcRequest, SecretKey)>,
+        requests: (Vec<JsonRpcRequest>, SecretKey),
     ) -> Vec<JsonRpcResponseData> {
-        let nip46_requests: Vec<Option<(nip46::Request, SecretKey, String)>> = requests
+        let nip46_requests: Vec<Option<(nip46::Request, String)>> = requests
+            .0
             .into_iter()
-            .map(|(request, user_secret_key)| {
-                (&request)
-                    .try_into()
-                    .ok()
-                    .map(|(nip46_request, nip46_request_id)| {
-                        (nip46_request, user_secret_key, nip46_request_id)
-                    })
-            })
+            .map(|request| (&request).try_into().ok())
             .collect();
 
         let secp = nostr_sdk::secp256k1::Secp256k1::new();
 
         let approval = self
             .request_approver
-            .handle_batch_request(
+            .handle_batch_request((
                 nip46_requests
                     .iter()
                     .flatten()
+                    .map(|(nip46_request, _nip46_request_id)| nip46_request)
                     .cloned()
-                    .map(|(nip46_request, user_secret_key, _nip46_request_id)| {
-                        (
-                            nip46_request,
-                            user_secret_key.x_only_public_key(&secp).0.into(),
-                        )
-                    })
                     .collect(),
-            )
+                requests.1.x_only_public_key(&secp).0.into(),
+            ))
             .await;
 
         nip46_requests
             .into_iter()
             .map(|request_with_data_or| {
-                let Some((nip46_request, user_secret_key, nip46_request_id)) = request_with_data_or
-                else {
+                let Some((nip46_request, nip46_request_id)) = request_with_data_or else {
                     return JsonRpcResponseData::Error {
                         error: JsonRpcError::new(
                             JsonRpcErrorCode::InvalidRequest,
@@ -218,7 +215,7 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
 
                 let nip46_response = match nip46_request {
                     nip46::Request::SignEvent(unsigned_event) => nip46::ResponseResult::SignEvent(
-                        unsigned_event.sign(&Keys::new(user_secret_key)).unwrap(),
+                        unsigned_event.sign(&Keys::new(requests.1.clone())).unwrap(),
                     ),
                     // TODO: Implement the rest of the NIP-46 methods.
                     _ => {
@@ -244,6 +241,36 @@ impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> for Nip46OverNip55ServerH
                 }
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl JsonRpcServerHandler<(SingleOrBatch<JsonRpcRequest>, SecretKey)>
+    for Nip46OverNip55ServerHandler
+{
+    async fn handle_batch_request(
+        &self,
+        requests: (SingleOrBatch<JsonRpcRequest>, SecretKey),
+    ) -> SingleOrBatch<JsonRpcResponseData> {
+        let secret_key = requests.1;
+        match requests.0 {
+            SingleOrBatch::Single(request) => SingleOrBatch::Single(
+                // TODO: Ensure there is only one response and return an error if there is more than one.
+                // Also don't panic if there is no response.
+                self.handle_request_array((vec![request], secret_key))
+                    .await
+                    .into_iter()
+                    .next()
+                    .unwrap(),
+            ),
+            SingleOrBatch::Batch(requests) => SingleOrBatch::Batch(
+                // TODO: Ensure the order and number of responses matches the order and number of requests.
+                self.handle_request_array((requests, secret_key.clone()))
+                    .await
+                    .into_iter()
+                    .collect(),
+            ),
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use super::nip04_jsonrpc::{
     jsonrpc_response_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_request,
 };
-use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler};
+use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler, SingleOrBatch};
 use crate::{
     json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport},
     uds_req_res::server::UnixDomainSocketServerTransport,
@@ -24,7 +24,7 @@ impl Nip55Server {
     pub fn start(
         uds_address: impl Into<String>,
         key_manager: Arc<dyn KeyManager>,
-        handler: impl JsonRpcServerHandler<(JsonRpcRequest, SecretKey)> + 'static,
+        handler: impl JsonRpcServerHandler<(SingleOrBatch<JsonRpcRequest>, SecretKey)> + 'static,
     ) -> std::io::Result<Self> {
         let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
         let server = JsonRpcServer::start(transport, handler);
@@ -57,8 +57,8 @@ impl Nip55ServerTransport {
 
 impl futures::Stream for Nip55ServerTransport {
     type Item = (
-        (JsonRpcRequest, SecretKey),
-        futures::channel::oneshot::Sender<JsonRpcResponse>,
+        (SingleOrBatch<JsonRpcRequest>, SecretKey),
+        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
     );
 
     fn poll_next(
@@ -117,10 +117,10 @@ impl futures::Stream for Nip55ServerTransport {
     }
 }
 
-impl AsRef<JsonRpcRequest> for (JsonRpcRequest, SecretKey) {
-    fn as_ref(&self) -> &JsonRpcRequest {
+impl AsRef<SingleOrBatch<JsonRpcRequest>> for (SingleOrBatch<JsonRpcRequest>, SecretKey) {
+    fn as_ref(&self) -> &SingleOrBatch<JsonRpcRequest> {
         &self.0
     }
 }
 
-impl JsonRpcServerTransport<(JsonRpcRequest, SecretKey)> for Nip55ServerTransport {}
+impl JsonRpcServerTransport<(SingleOrBatch<JsonRpcRequest>, SecretKey)> for Nip55ServerTransport {}

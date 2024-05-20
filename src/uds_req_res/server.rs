@@ -4,7 +4,7 @@ use std::pin::Pin;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport};
+use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport, SingleOrBatch};
 
 use super::{UdsRequest, UdsResponse};
 
@@ -15,8 +15,9 @@ pub struct UnixDomainSocketServerTransport<Request: UdsRequest, Response: UdsRes
     uds_address: String,
 }
 
-impl<Request: AsRef<JsonRpcRequest> + UdsRequest> JsonRpcServerTransport<Request>
-    for UnixDomainSocketServerTransport<Request, JsonRpcResponse>
+impl<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + UdsRequest>
+    JsonRpcServerTransport<SingleOrBatchRequest>
+    for UnixDomainSocketServerTransport<SingleOrBatchRequest, SingleOrBatch<JsonRpcResponse>>
 {
 }
 
