@@ -2,7 +2,7 @@ use super::{
     nip04_jsonrpc::{
         jsonrpc_request_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_response,
     },
-    uds_req_res::client::{UdsClientError, UnixDomainSocketClientTransport},
+    uds::single_req_res::client::{UdsClientError, UnixDomainSocketClientTransport},
 };
 use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, SingleOrBatch};
 use nostr_sdk::{Event, Keys, Kind, PublicKey};

@@ -9,10 +9,10 @@ pub mod json_rpc;
 mod nip04_jsonrpc;
 pub mod nip_46;
 mod server;
-mod uds_req_res;
+mod uds;
 
 pub use client::*;
 pub use server::*;
-pub use uds_req_res::client::UdsClientError;
+pub use uds::single_req_res::client::UdsClientError;
 
 // TODO: Test that the client and server can communicate with each other.

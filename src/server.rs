@@ -4,7 +4,7 @@ use super::nip04_jsonrpc::{
 use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler, SingleOrBatch};
 use crate::{
     json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport},
-    uds_req_res::server::UnixDomainSocketServerTransport,
+    uds::single_req_res::server::UnixDomainSocketServerTransport,
 };
 use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys, PublicKey, SecretKey};

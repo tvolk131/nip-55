@@ -1,4 +1,4 @@
-use crate::uds_req_res::UdsResponse;
+use crate::uds::single_req_res::UdsResponse;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
