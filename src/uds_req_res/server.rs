@@ -4,7 +4,7 @@ use std::pin::Pin;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport};
+use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport, SingleOrBatch};
 
 use super::{UdsRequest, UdsResponse};
 
@@ -15,8 +15,9 @@ pub struct UnixDomainSocketServerTransport<Request: UdsRequest, Response: UdsRes
     uds_address: String,
 }
 
-impl<Request: AsRef<JsonRpcRequest> + UdsRequest> JsonRpcServerTransport<Request>
-    for UnixDomainSocketServerTransport<Request, JsonRpcResponse>
+impl<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + UdsRequest>
+    JsonRpcServerTransport<SingleOrBatchRequest>
+    for UnixDomainSocketServerTransport<SingleOrBatchRequest, SingleOrBatch<JsonRpcResponse>>
 {
 }
 
@@ -44,6 +45,7 @@ impl<Request: UdsRequest, Response: UdsResponse>
             std::fs::remove_file(&uds_address)?;
         }
 
+        // Queue for incoming requests to the server.
         let (rpc_sender, rpc_receiver) = futures::channel::mpsc::channel(1024);
 
         let listener = UnixListener::bind(&uds_address)?;
@@ -68,14 +70,11 @@ impl<Request: UdsRequest, Response: UdsResponse>
                         let (tx, rx) = futures::channel::oneshot::channel();
                         // TODO: Remove this unwrap. For now it's safe because the receiver will only be dropped when the server is dropped.
                         rpc_sender_clone.send((request, tx)).await.unwrap();
-                        let response = match rx.await {
-                            Ok(response) => response,
-                            Err(_) => Response::internal_error_response(
-                                "Internal error: Response sender dropped".to_string(),
-                            ),
-                        };
+                        if let Ok(response) = rx.await {
+                            Self::send_response_to_socket(socket, response).await?;
+                        }
 
-                        Self::send_response_to_socket(socket, response).await
+                        Ok(())
                     });
                 }
             }

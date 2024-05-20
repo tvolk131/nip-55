@@ -1,11 +1,11 @@
-use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse};
+use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, SingleOrBatch};
 use nostr_sdk::{nips::nip04, Event, EventBuilder, Keys, Kind, PublicKey, Tag};
 use serde::Serialize;
 use serde_json::Value;
 
 pub fn jsonrpc_request_to_nip04_encrypted_event(
     kind: Kind,
-    request: &JsonRpcRequest,
+    request: &SingleOrBatch<JsonRpcRequest>,
     client_keypair: &Keys,
     server_pubkey: PublicKey,
 ) -> Result<Event, nostr_sdk::event::builder::Error> {
@@ -14,7 +14,7 @@ pub fn jsonrpc_request_to_nip04_encrypted_event(
 
 pub fn jsonrpc_response_to_nip04_encrypted_event(
     kind: Kind,
-    response: &JsonRpcResponse,
+    response: &SingleOrBatch<JsonRpcResponse>,
     client_pubkey: PublicKey,
     server_keypair: &Keys,
 ) -> Result<Event, nostr_sdk::event::builder::Error> {
@@ -24,7 +24,7 @@ pub fn jsonrpc_response_to_nip04_encrypted_event(
 pub fn nip04_encrypted_event_to_jsonrpc_request(
     event: &Event,
     server_keypair: &Keys,
-) -> Result<JsonRpcRequest, NIP04DecryptionError> {
+) -> Result<SingleOrBatch<JsonRpcRequest>, NIP04DecryptionError> {
     let mut jsonrpc_request_json_object: serde_json::Map<String, Value> =
         decrypt_and_deserialize_nip04_event(event, server_keypair)?;
 
@@ -34,17 +34,14 @@ pub fn nip04_encrypted_event_to_jsonrpc_request(
         jsonrpc_request_json_object.insert("jsonrpc".to_string(), "2.0".into());
     }
 
-    let request: JsonRpcRequest =
-        serde_json::from_value(Value::Object(jsonrpc_request_json_object))
-            .map_err(NIP04DecryptionError::Json)?;
-
-    Ok(request)
+    serde_json::from_value(Value::Object(jsonrpc_request_json_object))
+        .map_err(NIP04DecryptionError::Json)
 }
 
 pub fn nip04_encrypted_event_to_jsonrpc_response(
     event: &Event,
     client_keypair: &Keys,
-) -> Result<JsonRpcResponse, NIP04DecryptionError> {
+) -> Result<SingleOrBatch<JsonRpcResponse>, NIP04DecryptionError> {
     let mut jsonrpc_response_json_object: serde_json::Map<String, Value> =
         decrypt_and_deserialize_nip04_event(event, client_keypair)?;
 
@@ -54,11 +51,8 @@ pub fn nip04_encrypted_event_to_jsonrpc_response(
         jsonrpc_response_json_object.insert("jsonrpc".to_string(), "2.0".into());
     }
 
-    let response: JsonRpcResponse =
-        serde_json::from_value(Value::Object(jsonrpc_response_json_object))
-            .map_err(NIP04DecryptionError::Json)?;
-
-    Ok(response)
+    serde_json::from_value(Value::Object(jsonrpc_response_json_object))
+        .map_err(NIP04DecryptionError::Json)
 }
 
 fn serialize_and_encrypt_nip04_event<T>(
@@ -122,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_jsonrpc_request_encryption_decryption_success() {
-        let request = JsonRpcRequest::new(
+        let request = SingleOrBatch::Single(JsonRpcRequest::new(
             "test_method".to_string(),
             Some(JsonRpcStructuredValue::Array(vec![
                 json!(1),
@@ -130,7 +124,7 @@ mod tests {
                 json!(3),
             ])),
             JsonRpcId::String("test_id".to_string()),
-        );
+        ));
 
         let server_keypair = Keys::generate();
         let server_pubkey = server_keypair.public_key();
@@ -156,12 +150,12 @@ mod tests {
 
     #[test]
     fn test_jsonrpc_response_encryption_decryption_success() {
-        let response = JsonRpcResponse::new(
+        let response = SingleOrBatch::Single(JsonRpcResponse::new(
             JsonRpcResponseData::Success {
                 result: Value::Array(vec![json!(1), json!(2), json!(3)]),
             },
             JsonRpcId::String("test_id".to_string()),
-        );
+        ));
 
         let server_keypair = Keys::generate();
 

@@ -4,7 +4,7 @@ use super::{
     },
     uds_req_res::client::{UdsClientError, UnixDomainSocketClientTransport},
 };
-use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse};
+use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, SingleOrBatch};
 use nostr_sdk::{Event, Keys, Kind, PublicKey};
 
 /// NIP-55 client that can make requests to a NIP-55 server.
@@ -24,9 +24,9 @@ impl Nip55Client {
     pub async fn send_request(
         &self,
         kind: Kind,
-        request: &JsonRpcRequest,
+        request: &SingleOrBatch<JsonRpcRequest>,
         server_pubkey: PublicKey,
-    ) -> Result<JsonRpcResponse, UdsClientError> {
+    ) -> Result<SingleOrBatch<JsonRpcResponse>, UdsClientError> {
         let temp_client_keypair = Keys::generate();
 
         let request_event: Event = jsonrpc_request_to_nip04_encrypted_event(
@@ -42,10 +42,7 @@ impl Nip55Client {
             .send_request(request_event)
             .await?;
 
-        let response: JsonRpcResponse =
-            nip04_encrypted_event_to_jsonrpc_response(&response_event, &temp_client_keypair)
-                .map_err(|_| UdsClientError::MalformedResponse)?;
-
-        Ok(response)
+        nip04_encrypted_event_to_jsonrpc_response(&response_event, &temp_client_keypair)
+            .map_err(|_| UdsClientError::MalformedResponse)
     }
 }

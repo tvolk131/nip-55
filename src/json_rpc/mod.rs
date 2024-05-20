@@ -1,41 +1,46 @@
-use crate::uds_req_res::{UdsRequest, UdsResponse};
+use crate::uds_req_res::UdsResponse;
 use async_trait::async_trait;
 use futures::StreamExt;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 
-pub trait JsonRpcServerTransport<Request: AsRef<JsonRpcRequest> = JsonRpcRequest>:
-    futures::Stream<Item = (Request, futures::channel::oneshot::Sender<JsonRpcResponse>)>
-    + Unpin
+pub trait JsonRpcServerTransport<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>>>:
+    futures::Stream<
+        Item = (
+            SingleOrBatchRequest,
+            futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
+        ),
+    > + Unpin
     + Send
     + Sync
 {
 }
 
-#[async_trait]
-pub trait JsonRpcServerHandler<Request: AsRef<JsonRpcRequest> + Send + 'static = JsonRpcRequest>:
-    Send + Sync
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
+pub enum SingleOrBatch<T> {
+    Single(T),
+    Batch(Vec<T>),
+}
+
+impl<T> UdsResponse for SingleOrBatch<T>
+where
+    T: Serialize + DeserializeOwned + Send + 'static,
 {
-    async fn handle_request(&self, request: Request) -> JsonRpcResponseData {
-        let mut responses = self.handle_batch_request(vec![request]).await;
-
-        if responses.len() != 1 {
-            return JsonRpcResponseData::Error {
-                error: JsonRpcError {
-                    code: JsonRpcErrorCode::InternalError,
-                    message: format!(
-                        "Internal error: Batch handler returned {} responses instead of 1",
-                        responses.len()
-                    ),
-                    data: None,
-                },
-            };
-        }
-
-        // Unwrap is safe because we just checked that the length is 1.
-        responses.pop().unwrap()
+    fn request_parse_error_response() -> Self {
+        // TODO: Implement this.
+        panic!()
     }
+}
 
-    async fn handle_batch_request(&self, requests: Vec<Request>) -> Vec<JsonRpcResponseData>;
+#[async_trait]
+pub trait JsonRpcServerHandler<
+    SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + 'static,
+>: Send + Sync
+{
+    async fn handle_batch_request(
+        &self,
+        requests: SingleOrBatchRequest,
+    ) -> SingleOrBatch<JsonRpcResponseData>;
 }
 
 pub struct JsonRpcServer {
@@ -43,16 +48,54 @@ pub struct JsonRpcServer {
 }
 
 impl JsonRpcServer {
-    pub fn start<Request: AsRef<JsonRpcRequest> + Send + 'static>(
-        mut transport: impl JsonRpcServerTransport<Request> + 'static,
-        handler: impl JsonRpcServerHandler<Request> + 'static,
+    // TODO: Completely clean up this function. It's a mess.
+    pub fn start<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + 'static>(
+        mut transport: impl JsonRpcServerTransport<SingleOrBatchRequest> + 'static,
+        handler: impl JsonRpcServerHandler<SingleOrBatchRequest> + 'static,
     ) -> Self {
         let task_handle = tokio::spawn(async move {
             while let Some((request, response_sender)) = transport.next().await {
-                let request_id = request.as_ref().id().clone();
-                let response =
-                    JsonRpcResponse::new(handler.handle_request(request).await, request_id);
-                response_sender.send(response).unwrap();
+                let single_request_id_or = match request.as_ref() {
+                    SingleOrBatch::Single(request) => Some(request.id().clone()),
+                    SingleOrBatch::Batch(_requests) => None,
+                };
+                let batch_request_ids_or: Option<Vec<JsonRpcId>> = match request.as_ref() {
+                    SingleOrBatch::Single(_request) => None,
+                    SingleOrBatch::Batch(requests) => Some(
+                        requests
+                            .iter()
+                            .map(|request| request.id().clone())
+                            .collect(),
+                    ),
+                };
+
+                response_sender
+                    .send(match handler.handle_batch_request(request).await {
+                        SingleOrBatch::Single(response_data) => {
+                            let Some(request_id) = single_request_id_or else {
+                                panic!("Expected a single request, but got a batch of requests",)
+                            };
+                            SingleOrBatch::Single(JsonRpcResponse::new(response_data, request_id))
+                        }
+                        SingleOrBatch::Batch(responses) => {
+                            let Some(request_ids) = batch_request_ids_or else {
+                                panic!("Expected a batch of requests, but got a single request")
+                            };
+                            SingleOrBatch::Batch(
+                                responses
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(i, response_data)| {
+                                        let Some(request_id) = request_ids.get(i) else {
+                                            panic!("Expected a request at index {i}")
+                                        };
+                                        JsonRpcResponse::new(response_data, request_id.clone())
+                                    })
+                                    .collect(),
+                            )
+                        }
+                    })
+                    .unwrap();
             }
         });
 
@@ -104,8 +147,6 @@ impl AsRef<JsonRpcRequest> for JsonRpcRequest {
     }
 }
 
-impl UdsRequest for JsonRpcRequest {}
-
 impl JsonRpcRequest {
     pub fn new(method: String, params: Option<JsonRpcStructuredValue>, id: JsonRpcId) -> Self {
         Self {
@@ -129,6 +170,7 @@ impl JsonRpcRequest {
     }
 }
 
+// TODO: Rename to `JsonRpcRequestId`.
 #[derive(PartialEq, Debug, Clone)]
 pub enum JsonRpcId {
     Number(i32),
@@ -198,34 +240,6 @@ pub struct JsonRpcResponse {
     #[serde(flatten)]
     data: JsonRpcResponseData,
     id: JsonRpcId,
-}
-
-impl UdsResponse for JsonRpcResponse {
-    fn request_parse_error_response() -> Self {
-        Self::new(
-            JsonRpcResponseData::Error {
-                error: JsonRpcError {
-                    code: JsonRpcErrorCode::ParseError,
-                    message: "Failed to parse request".to_string(),
-                    data: None,
-                },
-            },
-            JsonRpcId::Null,
-        )
-    }
-
-    fn internal_error_response(msg: String) -> Self {
-        Self::new(
-            JsonRpcResponseData::Error {
-                error: JsonRpcError {
-                    code: JsonRpcErrorCode::InternalError,
-                    message: msg,
-                    data: None,
-                },
-            },
-            JsonRpcId::Null,
-        )
-    }
 }
 
 impl JsonRpcResponse {
@@ -420,6 +434,61 @@ mod tests {
                 JsonRpcId::Null,
             ),
             "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"foo\",\"data\":\"bar\"},\"id\":null}",
+        );
+    }
+
+    #[test]
+    fn serialize_deserialize_json_rpc_request_batch() {
+        // Test with single request.
+        assert_json_serialization(
+            SingleOrBatch::Single(JsonRpcRequest::new(
+                "get_public_key".to_string(),
+                None,
+                JsonRpcId::Null,
+            )),
+            "{\"jsonrpc\":\"2.0\",\"method\":\"get_public_key\",\"id\":null}",
+        );
+
+        // Test with batch request.
+        assert_json_serialization(
+            SingleOrBatch::Batch(vec![
+                JsonRpcRequest::new("get_public_key".to_string(), None, JsonRpcId::Null),
+                JsonRpcRequest::new("get_foo_string".to_string(), None, JsonRpcId::String("foo".to_string())),
+            ]),
+            "[{\"jsonrpc\":\"2.0\",\"method\":\"get_public_key\",\"id\":null},{\"jsonrpc\":\"2.0\",\"method\":\"get_foo_string\",\"id\":\"foo\"}]",
+        );
+    }
+
+    #[test]
+    fn serialize_deserialize_json_rpc_response_batch() {
+        // Test with single response.
+        assert_json_serialization(
+            SingleOrBatch::Single(JsonRpcResponse::new(
+                JsonRpcResponseData::Success {
+                    result: serde_json::from_str("\"foo\"").unwrap(),
+                },
+                JsonRpcId::Null,
+            )),
+            "{\"jsonrpc\":\"2.0\",\"result\":\"foo\",\"id\":null}",
+        );
+
+        // Test with batch response.
+        assert_json_serialization(
+            SingleOrBatch::Batch(vec![
+                JsonRpcResponse::new(
+                    JsonRpcResponseData::Success {
+                        result: serde_json::from_str("\"foo\"").unwrap(),
+                    },
+                    JsonRpcId::Null,
+                ),
+                JsonRpcResponse::new(
+                    JsonRpcResponseData::Success {
+                        result: serde_json::from_str("\"bar\"").unwrap(),
+                    },
+                    JsonRpcId::String("foo".to_string()),
+                ),
+            ]),
+            "[{\"jsonrpc\":\"2.0\",\"result\":\"foo\",\"id\":null},{\"jsonrpc\":\"2.0\",\"result\":\"bar\",\"id\":\"foo\"}]",
         );
     }
 
