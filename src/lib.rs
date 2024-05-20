@@ -13,6 +13,6 @@ mod uds;
 
 pub use client::*;
 pub use server::*;
-pub use uds::single_req_res::client::UdsClientError;
+pub use uds::UdsClientError;
 
 // TODO: Test that the client and server can communicate with each other.

@@ -18,3 +18,43 @@ impl UdsResponse for Event {
         panic!()
     }
 }
+
+/// Error that can occur when communicating with a Unix domain socket server.
+#[derive(Clone, Debug, PartialEq)]
+pub enum UdsClientError {
+    /// A Unix domain socket server is not running on the specified address.
+    ServerNotRunning,
+
+    /// An I/O error occurred while writing to or reading from the Unix domain socket.
+    UdsSocketError,
+
+    /// An error occurred while serializing the request.
+    RequestSerializationError,
+
+    /// Received a response from the server that that cannot be parsed.
+    MalformedResponse,
+}
+
+impl std::fmt::Display for UdsClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UdsClientError::ServerNotRunning => {
+                write!(f, "Unix domain socket server not running.")
+            }
+            UdsClientError::UdsSocketError => {
+                write!(f, "Error writing to or reading from Unix domain socket.")
+            }
+            UdsClientError::RequestSerializationError => {
+                write!(f, "Error serializing the request.")
+            }
+            UdsClientError::MalformedResponse => {
+                write!(
+                    f,
+                    "Received a response from the server that that cannot be parsed."
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for UdsClientError {}
