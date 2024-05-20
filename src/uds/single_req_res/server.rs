@@ -6,7 +6,7 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport, SingleOrBatch};
 
-use super::{UdsRequest, UdsResponse};
+use super::super::{UdsRequest, UdsResponse};
 
 pub struct UnixDomainSocketServerTransport<Request: UdsRequest, Response: UdsResponse> {
     uds_task_handle: tokio::task::JoinHandle<()>,
