@@ -1,7 +1,12 @@
 use nostr_sdk::Event;
 use serde::{de::DeserializeOwned, Serialize};
 
+pub mod bidirectional_streaming;
 pub mod single_req_res;
+
+pub trait UdsMessage: Serialize + DeserializeOwned + Send + 'static {}
+
+impl UdsMessage for Event {}
 
 pub trait UdsRequest: Serialize + DeserializeOwned + Send + 'static {}
 
