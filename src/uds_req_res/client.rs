@@ -55,7 +55,7 @@ impl UnixDomainSocketClientTransport {
 }
 
 /// Error that can occur when communicating with a Unix domain socket server.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UdsClientError {
     /// A Unix domain socket server is not running on the specified address.
     ServerNotRunning,
@@ -73,16 +73,16 @@ pub enum UdsClientError {
 impl std::fmt::Display for UdsClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UdsClientError::ServerNotRunning => {
+            Self::ServerNotRunning => {
                 write!(f, "Unix domain socket server not running.")
             }
-            UdsClientError::UdsSocketError => {
+            Self::UdsSocketError => {
                 write!(f, "Error writing to or reading from Unix domain socket.")
             }
-            UdsClientError::RequestSerializationError => {
+            Self::RequestSerializationError => {
                 write!(f, "Error serializing the request.")
             }
-            UdsClientError::MalformedResponse => {
+            Self::MalformedResponse => {
                 write!(
                     f,
                     "Received a response from the server that that cannot be parsed."

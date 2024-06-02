@@ -129,14 +129,14 @@ pub struct StaticRequestApprover {
 
 impl StaticRequestApprover {
     /// Create a new `StaticRequestApprover` that will always immediately approve requests.
-    pub fn always_approve() -> Self {
+    pub const fn always_approve() -> Self {
         Self {
             approval: Nip46RequestApproval::Approve,
         }
     }
 
     /// Create a new `StaticRequestApprover` that will always immediately reject requests.
-    pub fn always_reject() -> Self {
+    pub const fn always_reject() -> Self {
         Self {
             approval: Nip46RequestApproval::Reject,
         }
@@ -203,7 +203,7 @@ impl Nip46OverNip55ServerHandler {
                     };
                 };
 
-                if let Nip46RequestApproval::Reject = approval {
+                if approval == Nip46RequestApproval::Reject {
                     return JsonRpcResponseData::Error {
                         error: JsonRpcError::new(
                             JsonRpcErrorCode::InternalError,
@@ -229,16 +229,15 @@ impl Nip46OverNip55ServerHandler {
                     }
                 };
 
-                match (&nip46_response, &nip46_request_id).try_into() {
-                    Ok(response) => response,
-                    Err(_) => JsonRpcResponseData::Error {
+                (&nip46_response, &nip46_request_id)
+                    .try_into()
+                    .unwrap_or_else(|_| JsonRpcResponseData::Error {
                         error: JsonRpcError::new(
                             JsonRpcErrorCode::InternalError,
                             "Failed to convert NIP-46 response to JSON-RPC response".to_string(),
                             None,
                         ),
-                    },
-                }
+                    })
             })
             .collect()
     }
