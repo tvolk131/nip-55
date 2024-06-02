@@ -15,7 +15,7 @@ pub trait JsonRpcServerTransport<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonR
 {
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(untagged)]
 pub enum SingleOrBatch<T> {
     Single(T),
@@ -141,14 +141,18 @@ pub struct JsonRpcRequest {
     id: JsonRpcId,
 }
 
-impl AsRef<JsonRpcRequest> for JsonRpcRequest {
-    fn as_ref(&self) -> &JsonRpcRequest {
+impl AsRef<Self> for JsonRpcRequest {
+    fn as_ref(&self) -> &Self {
         self
     }
 }
 
 impl JsonRpcRequest {
-    pub fn new(method: String, params: Option<JsonRpcStructuredValue>, id: JsonRpcId) -> Self {
+    pub const fn new(
+        method: String,
+        params: Option<JsonRpcStructuredValue>,
+        id: JsonRpcId,
+    ) -> Self {
         Self {
             jsonrpc: JsonRpcVersion::V2,
             method,
@@ -161,17 +165,17 @@ impl JsonRpcRequest {
         &self.method
     }
 
-    pub fn params(&self) -> Option<&JsonRpcStructuredValue> {
+    pub const fn params(&self) -> Option<&JsonRpcStructuredValue> {
         self.params.as_ref()
     }
 
-    pub fn id(&self) -> &JsonRpcId {
+    pub const fn id(&self) -> &JsonRpcId {
         &self.id
     }
 }
 
 // TODO: Rename to `JsonRpcRequestId`.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum JsonRpcId {
     Number(i32),
     String(String),
@@ -181,9 +185,9 @@ pub enum JsonRpcId {
 impl JsonRpcId {
     fn to_json_value(&self) -> serde_json::Value {
         match self {
-            JsonRpcId::Number(n) => serde_json::Value::Number((*n).into()),
-            JsonRpcId::String(s) => serde_json::Value::String(s.clone()),
-            JsonRpcId::Null => serde_json::Value::Null,
+            Self::Number(n) => serde_json::Value::Number((*n).into()),
+            Self::String(s) => serde_json::Value::String(s.clone()),
+            Self::Null => serde_json::Value::Null,
         }
     }
 }
@@ -204,13 +208,13 @@ impl<'de> Deserialize<'de> for JsonRpcId {
     {
         serde_json::Value::deserialize(deserializer).and_then(|value| {
             if value.is_i64() {
-                Ok(JsonRpcId::Number(
+                Ok(Self::Number(
                     i32::try_from(value.as_i64().unwrap()).unwrap(),
                 ))
             } else if value.is_string() {
-                Ok(JsonRpcId::String(value.as_str().unwrap().to_string()))
+                Ok(Self::String(value.as_str().unwrap().to_string()))
             } else if value.is_null() {
-                Ok(JsonRpcId::Null)
+                Ok(Self::Null)
             } else {
                 Err(serde::de::Error::custom("Invalid JSON-RPC ID"))
             }
@@ -218,7 +222,7 @@ impl<'de> Deserialize<'de> for JsonRpcId {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(untagged)]
 pub enum JsonRpcStructuredValue {
     Object(serde_json::Map<String, serde_json::Value>),
@@ -228,8 +232,8 @@ pub enum JsonRpcStructuredValue {
 impl JsonRpcStructuredValue {
     pub fn into_value(self) -> serde_json::Value {
         match self {
-            JsonRpcStructuredValue::Object(object) => serde_json::Value::Object(object),
-            JsonRpcStructuredValue::Array(array) => serde_json::Value::Array(array),
+            Self::Object(object) => serde_json::Value::Object(object),
+            Self::Array(array) => serde_json::Value::Array(array),
         }
     }
 }
@@ -243,7 +247,7 @@ pub struct JsonRpcResponse {
 }
 
 impl JsonRpcResponse {
-    pub fn new(data: JsonRpcResponseData, id: JsonRpcId) -> Self {
+    pub const fn new(data: JsonRpcResponseData, id: JsonRpcId) -> Self {
         Self {
             jsonrpc: JsonRpcVersion::V2,
             data,
@@ -251,12 +255,12 @@ impl JsonRpcResponse {
         }
     }
 
-    pub fn data(&self) -> &JsonRpcResponseData {
+    pub const fn data(&self) -> &JsonRpcResponseData {
         &self.data
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(untagged)]
 pub enum JsonRpcResponseData {
     Success { result: serde_json::Value },
@@ -264,7 +268,7 @@ pub enum JsonRpcResponseData {
 }
 
 // TODO: Make these fields private.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct JsonRpcError {
     code: JsonRpcErrorCode,
     message: String,
@@ -273,7 +277,11 @@ pub struct JsonRpcError {
 }
 
 impl JsonRpcError {
-    pub fn new(code: JsonRpcErrorCode, message: String, data: Option<serde_json::Value>) -> Self {
+    pub const fn new(
+        code: JsonRpcErrorCode,
+        message: String,
+        data: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             code,
             message,
@@ -281,12 +289,12 @@ impl JsonRpcError {
         }
     }
 
-    pub fn code(&self) -> JsonRpcErrorCode {
+    pub const fn code(&self) -> JsonRpcErrorCode {
         self.code
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum JsonRpcErrorCode {
     ParseError,
     InvalidRequest,
@@ -302,30 +310,30 @@ impl Serialize for JsonRpcErrorCode {
         S: Serializer,
     {
         let code = match *self {
-            JsonRpcErrorCode::ParseError => -32700,
-            JsonRpcErrorCode::InvalidRequest => -32600,
-            JsonRpcErrorCode::MethodNotFound => -32601,
-            JsonRpcErrorCode::InvalidParams => -32602,
-            JsonRpcErrorCode::InternalError => -32603,
-            JsonRpcErrorCode::Custom(c) => c,
+            Self::ParseError => -32700,
+            Self::InvalidRequest => -32600,
+            Self::MethodNotFound => -32601,
+            Self::InvalidParams => -32602,
+            Self::InternalError => -32603,
+            Self::Custom(c) => c,
         };
         serializer.serialize_i32(code)
     }
 }
 
 impl<'de> Deserialize<'de> for JsonRpcErrorCode {
-    fn deserialize<D>(deserializer: D) -> Result<JsonRpcErrorCode, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let code = i32::deserialize(deserializer)?;
         match code {
-            -32700 => Ok(JsonRpcErrorCode::ParseError),
-            -32600 => Ok(JsonRpcErrorCode::InvalidRequest),
-            -32601 => Ok(JsonRpcErrorCode::MethodNotFound),
-            -32602 => Ok(JsonRpcErrorCode::InvalidParams),
-            -32603 => Ok(JsonRpcErrorCode::InternalError),
-            _ => Ok(JsonRpcErrorCode::Custom(code)),
+            -32700 => Ok(Self::ParseError),
+            -32600 => Ok(Self::InvalidRequest),
+            -32601 => Ok(Self::MethodNotFound),
+            -32602 => Ok(Self::InvalidParams),
+            -32603 => Ok(Self::InternalError),
+            _ => Ok(Self::Custom(code)),
         }
     }
 }
