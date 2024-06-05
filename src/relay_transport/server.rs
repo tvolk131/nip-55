@@ -1,5 +1,6 @@
+use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
-use nostr_relay_pool::{RelayPoolNotification, SubscribeOptions};
+use nostr_relay_pool::{RelayPoolNotification, RelaySendOptions, SubscribeOptions};
 use nostr_sdk::{Filter, Keys, Kind, PublicKey, RelayMessage, RelayPool};
 use std::pin::Pin;
 
@@ -8,17 +9,17 @@ use crate::nip04_jsonrpc::{
     jsonrpc_response_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_request,
 };
 
-impl AsRef<SingleOrBatch<JsonRpcRequest>> for SingleOrBatch<JsonRpcRequest> {
-    fn as_ref(&self) -> &SingleOrBatch<JsonRpcRequest> {
-        &self
+impl AsRef<Self> for SingleOrBatch<JsonRpcRequest> {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 
 pub struct JsonRpcServerRelayTransport {
     relay_task_handle: tokio::task::JoinHandle<()>,
-    rpc_receiver: futures::channel::mpsc::Receiver<(
+    rpc_receiver: mpsc::Receiver<(
         SingleOrBatch<JsonRpcRequest>,
-        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
+        oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
     )>,
 }
 
@@ -40,7 +41,7 @@ impl JsonRpcServerRelayTransport {
         kind: Kind,
     ) -> std::io::Result<Self> {
         // Queue for incoming requests to the server.
-        let (rpc_sender, rpc_receiver) = futures::channel::mpsc::channel(1024);
+        let (rpc_sender, rpc_receiver) = mpsc::channel(1024);
 
         let transport_subscription_id = relay_pool
             // TODO: Add a `since` and store the last event ID to avoid replaying events.
@@ -57,33 +58,25 @@ impl JsonRpcServerRelayTransport {
                 let mut rpc_sender_clone = rpc_sender.clone();
 
                 if let Ok(notification) = notification_receiver.recv().await {
-                    // TODO: Dedupe some of the logic here.
                     let request_event = match notification {
                         RelayPoolNotification::Event {
                             relay_url: _,
                             subscription_id,
                             event,
+                        }
+                        | RelayPoolNotification::Message {
+                            relay_url: _,
+                            message:
+                                RelayMessage::Event {
+                                    subscription_id,
+                                    event,
+                                },
                         } => {
                             if subscription_id != transport_subscription_id {
                                 continue;
                             }
                             *event
                         }
-                        RelayPoolNotification::Message {
-                            relay_url: _,
-                            message,
-                        } => match message {
-                            RelayMessage::Event {
-                                subscription_id,
-                                event,
-                            } => {
-                                if subscription_id != transport_subscription_id {
-                                    continue;
-                                }
-                                *event
-                            }
-                            _ => continue,
-                        },
                         _ => continue,
                     };
 
@@ -110,7 +103,7 @@ impl JsonRpcServerRelayTransport {
                             // .await;
                         };
 
-                        let (tx, rx) = futures::channel::oneshot::channel();
+                        let (tx, rx) = oneshot::channel();
                         // TODO: Remove this unwrap. For now it's safe because the receiver will only be dropped when the server is dropped.
                         rpc_sender_clone.send((request, tx)).await.unwrap();
                         if let Ok(response) = rx.await {
@@ -152,7 +145,10 @@ impl JsonRpcServerRelayTransport {
         )?;
 
         relay_pool
-            .send_event(response_event, Default::default())
+            .send_event(
+                response_event,
+                RelaySendOptions::default().skip_send_confirmation(true),
+            )
             .await?;
 
         Ok(())
@@ -161,9 +157,9 @@ impl JsonRpcServerRelayTransport {
     fn project(
         self: Pin<&mut Self>,
     ) -> Pin<
-        &mut futures::channel::mpsc::Receiver<(
+        &mut mpsc::Receiver<(
             SingleOrBatch<JsonRpcRequest>,
-            futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
+            oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
         )>,
     > {
         unsafe { self.map_unchecked_mut(|x| &mut x.rpc_receiver) }
@@ -173,7 +169,7 @@ impl JsonRpcServerRelayTransport {
 impl futures::Stream for JsonRpcServerRelayTransport {
     type Item = (
         SingleOrBatch<JsonRpcRequest>,
-        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
+        oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
     );
 
     fn poll_next(

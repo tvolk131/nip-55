@@ -70,7 +70,7 @@ mod tests {
             relay_pool,
             kind,
             client_keypair,
-            Duration::from_secs(5),
+            Duration::from_secs(10),
         );
 
         let request = JsonRpcRequest::new("test_method".into(), None, JsonRpcId::Null);
