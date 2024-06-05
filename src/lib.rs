@@ -8,6 +8,7 @@ mod client;
 pub mod json_rpc;
 mod nip04_jsonrpc;
 pub mod nip_46;
+pub mod relay_transport;
 mod server;
 mod uds_req_res;
 
