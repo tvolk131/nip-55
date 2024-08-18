@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::task::Poll;
 
 pub trait KeyManager: Send + Sync {
+    // TODO: Make this async.
     fn get_secret_key(&self, public_key: &PublicKey) -> Option<SecretKey>;
 }
 
