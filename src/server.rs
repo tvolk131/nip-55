@@ -1,38 +1,63 @@
 use super::nip04_jsonrpc::{
     jsonrpc_response_to_nip04_encrypted_event, nip04_encrypted_event_to_jsonrpc_request,
 };
-use crate::json_rpc::{JsonRpcServer, JsonRpcServerHandler, SingleOrBatch};
+use crate::json_rpc::{JsonRpcResponseData, JsonRpcServerStream, SingleOrBatch};
 use crate::{
     json_rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcServerTransport},
     uds_req_res::server::UnixDomainSocketServerTransport,
 };
 use futures::{FutureExt, StreamExt};
 use nostr_sdk::{Event, Keys, PublicKey, SecretKey};
+use std::pin::Pin;
 use std::sync::Arc;
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 pub trait KeyManager: Send + Sync {
+    // TODO: Make this async.
     fn get_secret_key(&self, public_key: &PublicKey) -> Option<SecretKey>;
 }
 
-/// NIP-55 server that can receive requests from a NIP-55 client.
-pub struct Nip55Server {
-    server: JsonRpcServer,
+pub struct Nip55ServerStream {
+    #[allow(clippy::type_complexity)]
+    stream: Pin<
+        Box<
+            dyn futures::Stream<
+                    Item = (
+                        SingleOrBatch<JsonRpcRequest>,
+                        SecretKey,
+                        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponseData>>,
+                    ),
+                > + Send,
+        >,
+    >,
 }
 
-impl Nip55Server {
-    pub fn start(
+impl futures::Stream for Nip55ServerStream {
+    type Item = (
+        SingleOrBatch<JsonRpcRequest>,
+        SecretKey,
+        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponseData>>,
+    );
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream.poll_next_unpin(cx)
+    }
+}
+
+impl Nip55ServerStream {
+    pub fn start<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + 'static>(
         uds_address: impl Into<String>,
         key_manager: Arc<dyn KeyManager>,
-        handler: impl JsonRpcServerHandler<(SingleOrBatch<JsonRpcRequest>, SecretKey)> + 'static,
     ) -> std::io::Result<Self> {
-        let transport = Nip55ServerTransport::connect_and_start(uds_address, key_manager)?;
-        let server = JsonRpcServer::start(transport, handler);
-        Ok(Self { server })
-    }
-
-    pub fn stop(self) {
-        self.server.stop();
+        Ok(Self {
+            stream: Box::pin(
+                JsonRpcServerStream::start(Nip55ServerTransport::connect_and_start(
+                    uds_address,
+                    key_manager,
+                )?)
+                .map(|((req, secret_key), res_sender)| (req, secret_key, res_sender)),
+            ),
+        })
     }
 }
 

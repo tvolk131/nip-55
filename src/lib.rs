@@ -9,6 +9,7 @@ pub mod json_rpc;
 mod nip04_jsonrpc;
 pub mod nip_46;
 mod server;
+mod stream_helper;
 mod uds_req_res;
 
 pub use client::*;
