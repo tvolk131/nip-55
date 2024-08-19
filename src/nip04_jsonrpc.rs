@@ -76,11 +76,16 @@ where
     .to_event(sender_keypair)
 }
 
+// TODO: Remove the `#[allow(dead_code)]` attributes here.
 #[derive(Debug)]
 pub enum NIP04DecryptionError {
+    #[allow(dead_code)]
     EventError(nostr_sdk::event::Error),
+    #[allow(dead_code)]
     KeyError(nostr_sdk::key::Error),
+    #[allow(dead_code)]
     Nip04Error(nip04::Error),
+    #[allow(dead_code)]
     Json(serde_json::Error),
 }
 

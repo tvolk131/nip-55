@@ -1,17 +1,19 @@
-use crate::uds_req_res::UdsResponse;
-use async_trait::async_trait;
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+use crate::{stream_helper::map_sender, uds_req_res::UdsResponse};
 use futures::StreamExt;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 
 pub trait JsonRpcServerTransport<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>>>:
     futures::Stream<
-        Item = (
-            SingleOrBatchRequest,
-            futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
-        ),
-    > + Unpin
-    + Send
-    + Sync
+    Item = (
+        SingleOrBatchRequest,
+        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponse>>,
+    ),
+>
 {
 }
 
@@ -20,6 +22,17 @@ pub trait JsonRpcServerTransport<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonR
 pub enum SingleOrBatch<T> {
     Single(T),
     Batch(Vec<T>),
+}
+
+impl<T> SingleOrBatch<T> {
+    pub fn map<TOut, MapFn: Fn(T) -> TOut>(self, map_fn: MapFn) -> SingleOrBatch<TOut> {
+        match self {
+            Self::Single(request) => SingleOrBatch::Single(map_fn(request)),
+            Self::Batch(requests) => {
+                SingleOrBatch::Batch(requests.into_iter().map(map_fn).collect())
+            }
+        }
+    }
 }
 
 impl<T> UdsResponse for SingleOrBatch<T>
@@ -32,29 +45,46 @@ where
     }
 }
 
-#[async_trait]
-pub trait JsonRpcServerHandler<
-    SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + 'static,
->: Send + Sync
+pub struct JsonRpcServerStream<
+    SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + Sync + 'static,
+> {
+    #[allow(clippy::type_complexity)]
+    stream: Pin<
+        Box<
+            dyn futures::Stream<
+                    Item = (
+                        SingleOrBatchRequest,
+                        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponseData>>,
+                    ),
+                > + Send,
+        >,
+    >,
+}
+
+impl<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + Sync + 'static>
+    futures::Stream for JsonRpcServerStream<SingleOrBatchRequest>
 {
-    async fn handle_batch_request(
-        &self,
-        requests: SingleOrBatchRequest,
-    ) -> SingleOrBatch<JsonRpcResponseData>;
+    type Item = (
+        SingleOrBatchRequest,
+        futures::channel::oneshot::Sender<SingleOrBatch<JsonRpcResponseData>>,
+    );
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream
+            .poll_next_unpin(cx)
+            .map(|next_item_or| next_item_or)
+    }
 }
 
-pub struct JsonRpcServer {
-    task_handle: tokio::task::JoinHandle<()>,
-}
-
-impl JsonRpcServer {
+impl<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + Sync + 'static>
+    JsonRpcServerStream<SingleOrBatchRequest>
+{
     // TODO: Completely clean up this function. It's a mess.
-    pub fn start<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>> + Send + 'static>(
-        mut transport: impl JsonRpcServerTransport<SingleOrBatchRequest> + 'static,
-        handler: impl JsonRpcServerHandler<SingleOrBatchRequest> + 'static,
+    pub fn start(
+        transport: impl JsonRpcServerTransport<SingleOrBatchRequest> + Send + 'static,
     ) -> Self {
-        let task_handle = tokio::spawn(async move {
-            while let Some((request, response_sender)) = transport.next().await {
+        Self {
+            stream: Box::pin(transport.map(|(request, response_sender)| {
                 let single_request_id_or = match request.as_ref() {
                     SingleOrBatch::Single(request) => Some(request.id().clone()),
                     SingleOrBatch::Batch(_requests) => None,
@@ -69,49 +99,35 @@ impl JsonRpcServer {
                     ),
                 };
 
-                response_sender
-                    .send(match handler.handle_batch_request(request).await {
-                        SingleOrBatch::Single(response_data) => {
-                            let Some(request_id) = single_request_id_or else {
-                                panic!("Expected a single request, but got a batch of requests",)
-                            };
-                            SingleOrBatch::Single(JsonRpcResponse::new(response_data, request_id))
-                        }
-                        SingleOrBatch::Batch(responses) => {
-                            let Some(request_ids) = batch_request_ids_or else {
-                                panic!("Expected a batch of requests, but got a single request")
-                            };
-                            SingleOrBatch::Batch(
-                                responses
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(i, response_data)| {
-                                        let Some(request_id) = request_ids.get(i) else {
-                                            panic!("Expected a request at index {i}")
-                                        };
-                                        JsonRpcResponse::new(response_data, request_id.clone())
-                                    })
-                                    .collect(),
-                            )
-                        }
-                    })
-                    .unwrap();
-            }
-        });
+                let response_sender = map_sender(response_sender, |response| match response {
+                    SingleOrBatch::Single(response_data) => {
+                        let Some(request_id) = single_request_id_or else {
+                            panic!("Expected a single request, but got a batch of requests",)
+                        };
+                        SingleOrBatch::Single(JsonRpcResponse::new(response_data, request_id))
+                    }
+                    SingleOrBatch::Batch(responses) => {
+                        let Some(request_ids) = batch_request_ids_or else {
+                            panic!("Expected a batch of requests, but got a single request")
+                        };
+                        SingleOrBatch::Batch(
+                            responses
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, response_data)| {
+                                    let Some(request_id) = request_ids.get(i) else {
+                                        panic!("Expected a request at index {i}")
+                                    };
+                                    JsonRpcResponse::new(response_data, request_id.clone())
+                                })
+                                .collect(),
+                        )
+                    }
+                });
 
-        Self { task_handle }
-    }
-
-    pub fn stop(self) {
-        // Drop the server, which will abort the task.
-        drop(self);
-    }
-}
-
-impl std::ops::Drop for JsonRpcServer {
-    fn drop(&mut self) {
-        // Abort the task, since it will loop forever otherwise.
-        self.task_handle.abort();
+                (request, response_sender)
+            })),
+        }
     }
 }
 
