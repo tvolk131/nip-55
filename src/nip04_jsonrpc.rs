@@ -89,6 +89,17 @@ pub enum Nip04DecryptionError {
     Json(serde_json::Error),
 }
 
+impl std::fmt::Display for Nip04DecryptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EventError(e) => write!(f, "Event error: {e}"),
+            Self::KeyError(e) => write!(f, "Key error: {e}"),
+            Self::Nip04Error(e) => write!(f, "NIP-04 error: {e}"),
+            Self::Json(e) => write!(f, "JSON error: {e}"),
+        }
+    }
+}
+
 fn decrypt_and_deserialize_nip04_event<T>(
     event: &Event,
     recipient_keypair: &Keys,

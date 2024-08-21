@@ -40,7 +40,10 @@ impl Nip46OverNip55Client {
         match response {
             nip46::ResponseResult::SignEvent(signed_event) => Ok(signed_event),
             _ => Err(Nip46OverNip55ClientError::UdsClientError(
-                UdsClientError::MalformedResponse,
+                UdsClientError::MalformedResponse(anyhow::anyhow!(
+                    "Expected SignEvent response, but got {:?}",
+                    response
+                )),
             )),
         }
     }
@@ -65,7 +68,9 @@ impl Nip46OverNip55Client {
             .map_err(Nip46OverNip55ClientError::UdsClientError)?
         else {
             return Err(Nip46OverNip55ClientError::UdsClientError(
-                UdsClientError::MalformedResponse,
+                UdsClientError::MalformedResponse(anyhow::anyhow!(
+                    "Expected single response, but got batch response"
+                )),
             ));
         };
 
@@ -73,8 +78,8 @@ impl Nip46OverNip55Client {
             return Err(Nip46OverNip55ClientError::JsonRpcError(error.clone()));
         }
 
-        (&response).try_into().map_err(|_| {
-            Nip46OverNip55ClientError::UdsClientError(UdsClientError::MalformedResponse)
+        (&response).try_into().map_err(|e| {
+            Nip46OverNip55ClientError::UdsClientError(UdsClientError::MalformedResponse(e))
         })
     }
 }

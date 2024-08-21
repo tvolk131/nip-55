@@ -43,6 +43,6 @@ impl Nip55Client {
             .await?;
 
         nip04_encrypted_event_to_jsonrpc_response(&response_event, &temp_client_keypair)
-            .map_err(|_| UdsClientError::MalformedResponse)
+            .map_err(|e| UdsClientError::MalformedResponse(anyhow::anyhow!(e)))
     }
 }
