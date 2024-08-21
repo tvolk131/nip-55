@@ -24,7 +24,7 @@ pub fn jsonrpc_response_to_nip04_encrypted_event(
 pub fn nip04_encrypted_event_to_jsonrpc_request(
     event: &Event,
     server_keypair: &Keys,
-) -> Result<SingleOrBatch<JsonRpcRequest>, NIP04DecryptionError> {
+) -> Result<SingleOrBatch<JsonRpcRequest>, Nip04DecryptionError> {
     let mut jsonrpc_request_json_object: serde_json::Map<String, Value> =
         decrypt_and_deserialize_nip04_event(event, server_keypair)?;
 
@@ -35,13 +35,13 @@ pub fn nip04_encrypted_event_to_jsonrpc_request(
     }
 
     serde_json::from_value(Value::Object(jsonrpc_request_json_object))
-        .map_err(NIP04DecryptionError::Json)
+        .map_err(Nip04DecryptionError::Json)
 }
 
 pub fn nip04_encrypted_event_to_jsonrpc_response(
     event: &Event,
     client_keypair: &Keys,
-) -> Result<SingleOrBatch<JsonRpcResponse>, NIP04DecryptionError> {
+) -> Result<SingleOrBatch<JsonRpcResponse>, Nip04DecryptionError> {
     let mut jsonrpc_response_json_object: serde_json::Map<String, Value> =
         decrypt_and_deserialize_nip04_event(event, client_keypair)?;
 
@@ -52,7 +52,7 @@ pub fn nip04_encrypted_event_to_jsonrpc_response(
     }
 
     serde_json::from_value(Value::Object(jsonrpc_response_json_object))
-        .map_err(NIP04DecryptionError::Json)
+        .map_err(Nip04DecryptionError::Json)
 }
 
 fn serialize_and_encrypt_nip04_event<T>(
@@ -78,7 +78,7 @@ where
 
 // TODO: Remove the `#[allow(dead_code)]` attributes here.
 #[derive(Debug)]
-pub enum NIP04DecryptionError {
+pub enum Nip04DecryptionError {
     #[allow(dead_code)]
     EventError(nostr_sdk::event::Error),
     #[allow(dead_code)]
@@ -92,22 +92,22 @@ pub enum NIP04DecryptionError {
 fn decrypt_and_deserialize_nip04_event<T>(
     event: &Event,
     recipient_keypair: &Keys,
-) -> Result<T, NIP04DecryptionError>
+) -> Result<T, Nip04DecryptionError>
 where
     T: serde::de::DeserializeOwned,
 {
-    event.verify().map_err(NIP04DecryptionError::EventError)?;
+    event.verify().map_err(Nip04DecryptionError::EventError)?;
 
     let decrypted_data = nip04::decrypt(
         recipient_keypair
             .secret_key()
-            .map_err(NIP04DecryptionError::KeyError)?,
+            .map_err(Nip04DecryptionError::KeyError)?,
         &event.pubkey,
         &event.content,
     )
-    .map_err(NIP04DecryptionError::Nip04Error)?;
+    .map_err(Nip04DecryptionError::Nip04Error)?;
 
-    serde_json::from_str(&decrypted_data).map_err(NIP04DecryptionError::Json)
+    serde_json::from_str(&decrypted_data).map_err(Nip04DecryptionError::Json)
 }
 
 // TODO: More thoroughly test this module. Specifically error/edge cases.
