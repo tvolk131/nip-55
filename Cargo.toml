@@ -15,3 +15,6 @@ nostr-sdk = "0.30"
 serde = "1"
 serde_json = "1"
 tokio = "1"
+
+[dev-dependencies]
+uuid = { version = "1.10.0", features = ["v4"] }

@@ -289,6 +289,10 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
+    fn get_random_uds_address() -> String {
+        format!("/tmp/test-{}.sock", uuid::Uuid::new_v4())
+    }
+
     struct MockKeyManager {
         keys: Arc<Mutex<HashMap<PublicKey, SecretKey>>>,
     }
@@ -340,12 +344,13 @@ mod tests {
         // Since we're starting the server in a separate task, we need to wait for it to start.
         let (server_started_sender, server_started_receiver) = futures::channel::oneshot::channel();
 
+        let uds_address = get_random_uds_address();
+        let uds_address_clone = uds_address.clone();
+
         tokio::task::spawn(async {
-            let mut foo = Nip46OverNip55ServerStream::start(
-                "/tmp/test.sock".to_string(),
-                Arc::new(key_manager),
-            )
-            .expect("Failed to start NIP-46 over NIP-55 server");
+            let mut foo =
+                Nip46OverNip55ServerStream::start(uds_address_clone, Arc::new(key_manager))
+                    .expect("Failed to start NIP-46 over NIP-55 server");
 
             server_started_sender.send(()).unwrap();
 
@@ -356,7 +361,7 @@ mod tests {
 
         server_started_receiver.await.unwrap();
 
-        let client = Nip46OverNip55Client::new("/tmp/test.sock".to_string());
+        let client = Nip46OverNip55Client::new(uds_address);
 
         let unsigned_event = nostr_sdk::EventBuilder::new(Kind::TextNote, "example text", None)
             .to_unsigned_event(keypair.public_key());
