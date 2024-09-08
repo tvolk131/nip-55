@@ -104,19 +104,19 @@ impl futures::Stream for Nip55ServerTransport {
         // TODO: Should we attempt to NIP-04 decrypt the request for all public keys rather than just the first one?
         let Some(user_public_key) = request_event.public_keys().next() else {
             // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
-            return Poll::Pending;
+            return self.poll_next(cx);
         };
 
         let Some(user_secret_key) = self.key_manager.get_secret_key(user_public_key) else {
             // TODO: Should we send a response to `response_event_sender`? What secret key should we use to sign it?
-            return Poll::Pending;
+            return self.poll_next(cx);
         };
 
         let user_keypair = Keys::new(user_secret_key.clone());
 
         let Ok(request) = nip04_encrypted_event_to_jsonrpc_request(&request_event, &user_keypair)
         else {
-            return Poll::Pending;
+            return self.poll_next(cx);
         };
 
         let (response_sender, response_receiver) = futures::channel::oneshot::channel();
