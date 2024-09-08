@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_nip46_over_nip55() {
+    async fn test_nip46_over_nip55_registered_key() {
         let keypair = Keys::generate();
         let key_manager =
             MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
@@ -347,7 +347,7 @@ mod tests {
         let uds_address = get_random_uds_address();
         let uds_address_clone = uds_address.clone();
 
-        tokio::task::spawn(async {
+        let server_handle = tokio::task::spawn(async {
             let mut foo =
                 Nip46OverNip55ServerStream::start(uds_address_clone, Arc::new(key_manager))
                     .expect("Failed to start NIP-46 over NIP-55 server");
@@ -363,18 +363,89 @@ mod tests {
 
         let client = Nip46OverNip55Client::new(uds_address);
 
+        // Test multiple times to ensure stream doesn't lock up.
+        for _ in 0..10 {
+            let unsigned_event = nostr_sdk::EventBuilder::new(Kind::TextNote, "example text", None)
+                .to_unsigned_event(keypair.public_key());
+
+            let signed_event = client
+                .sign_event(unsigned_event, keypair.public_key())
+                .await
+                .expect("Failed to send NIP-46 request");
+
+            signed_event
+                .verify()
+                .expect("Failed to verify signed event");
+            assert_eq!(signed_event.kind, Kind::TextNote);
+            assert_eq!(signed_event.content, "example text");
+        }
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_nip46_over_nip55_unregistered_key() {
+        let key_manager = MockKeyManager::new();
+
+        // Since we're starting the server in a separate task, we need to wait for it to start.
+        let (server_started_sender, server_started_receiver) = futures::channel::oneshot::channel();
+
+        let uds_address = get_random_uds_address();
+        let uds_address_clone = uds_address.clone();
+
+        let server_handle = tokio::task::spawn(async {
+            let mut foo =
+                Nip46OverNip55ServerStream::start(uds_address_clone, Arc::new(key_manager))
+                    .expect("Failed to start NIP-46 over NIP-55 server");
+
+            server_started_sender.send(()).unwrap();
+
+            while let Some((_request_list, _public_key, response_sender)) = foo.next().await {
+                response_sender.send(Nip46RequestApproval::Approve).unwrap();
+            }
+        });
+
+        server_started_receiver.await.unwrap();
+
+        let client = Nip46OverNip55Client::new(uds_address);
+
+        // Test multiple times to ensure stream doesn't lock up.
+        for _ in 0..10 {
+            let unregistered_keypair = Keys::generate();
+
+            let unsigned_event = nostr_sdk::EventBuilder::new(Kind::TextNote, "example text", None)
+                .to_unsigned_event(unregistered_keypair.public_key());
+
+            let signed_event_error = client
+                .sign_event(unsigned_event.clone(), unregistered_keypair.public_key())
+                .await
+                .unwrap_err();
+
+            assert!(matches!(
+                signed_event_error,
+                Nip46OverNip55ClientError::UdsClientError(UdsClientError::MalformedResponse(_))
+            ));
+        }
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_nip46_over_nip55_no_server() {
+        let keypair = Keys::generate();
+
+        let client = Nip46OverNip55Client::new(get_random_uds_address());
+
         let unsigned_event = nostr_sdk::EventBuilder::new(Kind::TextNote, "example text", None)
             .to_unsigned_event(keypair.public_key());
 
-        let signed_event = client
-            .sign_event(unsigned_event, keypair.public_key())
-            .await
-            .expect("Failed to send NIP-46 request");
-
-        signed_event
-            .verify()
-            .expect("Failed to verify signed event");
-        assert_eq!(signed_event.kind, Kind::TextNote);
-        assert_eq!(signed_event.content, "example text");
+        assert!(matches!(
+            client
+                .sign_event(unsigned_event, keypair.public_key())
+                .await,
+            Err(Nip46OverNip55ClientError::UdsClientError(
+                UdsClientError::ServerNotRunning
+            ))
+        ));
     }
 }
