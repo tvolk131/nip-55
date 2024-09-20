@@ -1,6 +1,6 @@
 [package]
 name = "nip-55"
-version = "0.5.0"
+version = "0.6.1"
 edition = "2021"
 license = "MIT"
 description = "Reference implementation of Nostr NIP-55"
@@ -15,3 +15,6 @@ nostr-sdk = "0.30"
 serde = "1"
 serde_json = "1"
 tokio = "1"
+
+[dev-dependencies]
+uuid = { version = "1.10.0", features = ["v4"] }

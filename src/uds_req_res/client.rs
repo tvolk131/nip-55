@@ -22,7 +22,7 @@ impl UnixDomainSocketClientTransport {
             serde_json::to_vec(&request).map_err(|_| UdsClientError::RequestSerializationError)?;
         let serialize_response = self.send_and_receive_bytes(serialized_request).await?;
         serde_json::from_slice::<Response>(&serialize_response)
-            .map_err(|_| UdsClientError::MalformedResponse)
+            .map_err(|e| UdsClientError::MalformedResponse(e.into()))
     }
 
     async fn send_and_receive_bytes(
@@ -55,7 +55,7 @@ impl UnixDomainSocketClientTransport {
 }
 
 /// Error that can occur when communicating with a Unix domain socket server.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum UdsClientError {
     /// A Unix domain socket server is not running on the specified address.
     ServerNotRunning,
@@ -67,7 +67,7 @@ pub enum UdsClientError {
     RequestSerializationError,
 
     /// Received a response from the server that that cannot be parsed.
-    MalformedResponse,
+    MalformedResponse(anyhow::Error),
 }
 
 impl std::fmt::Display for UdsClientError {
@@ -82,10 +82,10 @@ impl std::fmt::Display for UdsClientError {
             Self::RequestSerializationError => {
                 write!(f, "Error serializing the request.")
             }
-            Self::MalformedResponse => {
+            Self::MalformedResponse(malformed_response_error) => {
                 write!(
                     f,
-                    "Received a response from the server that that cannot be parsed."
+                    "Received a response from the server that that cannot be parsed ({malformed_response_error})."
                 )
             }
         }
