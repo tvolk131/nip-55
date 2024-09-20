@@ -38,7 +38,7 @@ impl Nip46OverNip55Client {
         let request = nip46::Request::SignEvent(unsigned_event);
         let response = self.send_request(&request, user_pubkey).await?;
         match response {
-            nip46::ResponseResult::SignEvent(signed_event) => Ok(signed_event),
+            nip46::ResponseResult::SignEvent(signed_event) => Ok(*signed_event),
             _ => Err(Nip46OverNip55ClientError::UdsClientError(
                 UdsClientError::MalformedResponse(anyhow::anyhow!(
                     "Expected SignEvent response, but got {:?}",
@@ -158,11 +158,11 @@ impl Nip46OverNip55ServerStream {
 
                                     let nip46_response = match nip46_request {
                                         nip46::Request::SignEvent(unsigned_event) => {
-                                            nip46::ResponseResult::SignEvent(
+                                            nip46::ResponseResult::SignEvent(Box::from(
                                                 unsigned_event
                                                     .sign(&Keys::new(secret_key.clone()))
                                                     .unwrap(),
-                                            )
+                                            ))
                                         }
                                         // TODO: Implement the rest of the NIP-46 methods.
                                         _ => {
@@ -338,8 +338,7 @@ mod tests {
     #[tokio::test]
     async fn test_nip46_over_nip55_registered_key() {
         let keypair = Keys::generate();
-        let key_manager =
-            MockKeyManager::new_with_single_key(keypair.secret_key().unwrap().clone());
+        let key_manager = MockKeyManager::new_with_single_key(keypair.secret_key().clone());
 
         // Since we're starting the server in a separate task, we need to wait for it to start.
         let (server_started_sender, server_started_receiver) = futures::channel::oneshot::channel();
