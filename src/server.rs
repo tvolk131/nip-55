@@ -98,8 +98,8 @@ impl futures::Stream for Nip55ServerTransport {
             Poll::Ready(None) | Poll::Pending => return Poll::Pending,
         };
 
-        let request_event_kind = request_event.kind();
-        let request_event_author = request_event.author();
+        let request_event_kind = request_event.kind;
+        let request_event_author = request_event.pubkey;
 
         // TODO: Should we attempt to NIP-04 decrypt the request for all public keys rather than just the first one?
         let Some(user_public_key) = request_event.public_keys().next() else {

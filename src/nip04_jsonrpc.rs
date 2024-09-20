@@ -67,7 +67,7 @@ where
     EventBuilder::new(
         kind,
         nip04::encrypt(
-            sender_keypair.secret_key()?,
+            sender_keypair.secret_key(),
             &recipient_pubkey,
             serde_json::to_string(data)?,
         )?,
@@ -76,16 +76,10 @@ where
     .to_event(sender_keypair)
 }
 
-// TODO: Remove the `#[allow(dead_code)]` attributes here.
 #[derive(Debug)]
 pub enum Nip04DecryptionError {
-    #[allow(dead_code)]
     EventError(nostr_sdk::event::Error),
-    #[allow(dead_code)]
-    KeyError(nostr_sdk::key::Error),
-    #[allow(dead_code)]
     Nip04Error(nip04::Error),
-    #[allow(dead_code)]
     Json(serde_json::Error),
 }
 
@@ -93,7 +87,6 @@ impl std::fmt::Display for Nip04DecryptionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EventError(e) => write!(f, "Event error: {e}"),
-            Self::KeyError(e) => write!(f, "Key error: {e}"),
             Self::Nip04Error(e) => write!(f, "NIP-04 error: {e}"),
             Self::Json(e) => write!(f, "JSON error: {e}"),
         }
@@ -110,9 +103,7 @@ where
     event.verify().map_err(Nip04DecryptionError::EventError)?;
 
     let decrypted_data = nip04::decrypt(
-        recipient_keypair
-            .secret_key()
-            .map_err(Nip04DecryptionError::KeyError)?,
+        recipient_keypair.secret_key(),
         &event.pubkey,
         &event.content,
     )
@@ -156,7 +147,7 @@ mod tests {
         .expect("Failed to convert JSON-RPC request to NIP-04 encrypted event.");
 
         assert_eq!(event.kind, Kind::NostrConnect);
-        assert_eq!(event.tags(), &[Tag::public_key(server_pubkey)]);
+        assert_eq!(event.tags, &[Tag::public_key(server_pubkey)]);
 
         let decrypted_request = nip04_encrypted_event_to_jsonrpc_request(&event, &server_keypair)
             .expect("Failed to convert NIP-04 encrypted event to JSON-RPC request.");
@@ -187,7 +178,7 @@ mod tests {
         .expect("Failed to convert JSON-RPC response to NIP-04 encrypted event.");
 
         assert_eq!(event.kind, Kind::NostrConnect);
-        assert_eq!(event.tags(), &[Tag::public_key(client_pubkey)]);
+        assert_eq!(event.tags, &[Tag::public_key(client_pubkey)]);
 
         let decrypted_response = nip04_encrypted_event_to_jsonrpc_response(&event, &client_keypair)
             .expect("Failed to convert NIP-04 encrypted event to JSON-RPC response.");
