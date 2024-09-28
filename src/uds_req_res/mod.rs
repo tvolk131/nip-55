@@ -20,4 +20,53 @@ impl UdsResponse for Event {
     }
 }
 
-// TODO: Test that the client and server can communicate with each other.
+#[cfg(test)]
+mod tests {
+    use crate::UdsClientError;
+
+    use super::*;
+
+    use client::UnixDomainSocketClientTransport;
+    use futures::StreamExt;
+    use server::UnixDomainSocketServerTransport;
+
+    #[tokio::test]
+    async fn test_server_drops_response_sender() {
+        impl UdsRequest for () {}
+        impl UdsResponse for () {
+            fn request_parse_error_response() -> Self {
+                ()
+            }
+        }
+
+        // Since we're starting the server in a separate task, we need to wait for it to start.
+        let (server_started_sender, server_started_receiver) = futures::channel::oneshot::channel();
+
+        let server_handle = tokio::task::spawn(async {
+            let mut foo: UnixDomainSocketServerTransport<(), ()> =
+                UnixDomainSocketServerTransport::connect_and_start(
+                    "/tmp/test12333.sock".to_string(),
+                )
+                .expect("Failed to start UDS server");
+
+            server_started_sender.send(()).unwrap();
+
+            while let Some((_request, response_sender)) = foo.next().await {
+                drop(response_sender);
+            }
+        });
+
+        server_started_receiver.await.unwrap();
+
+        let client = UnixDomainSocketClientTransport::new("/tmp/test12333.sock".to_string());
+
+        for _ in 0..10 {
+            assert!(matches!(
+                client.send_request::<(), ()>(()).await,
+                Err(UdsClientError::MalformedResponse(_))
+            ));
+        }
+
+        server_handle.abort();
+    }
+}
