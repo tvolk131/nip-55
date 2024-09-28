@@ -10,18 +10,24 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: stable
           components: clippy, rustfmt
+
       - name: Build and Test
         run: |
           cargo check
           cargo fmt -- --check
           cargo clippy -- -D warnings
           cargo test
+        shell: ${{ matrix.os == 'windows-latest' && 'bash' || 'sh' }}
