@@ -12,7 +12,13 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            shell: sh
+          - os: macos-latest
+            shell: sh
+          - os: windows-latest
+            shell: bash
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Code
@@ -30,4 +36,4 @@ jobs:
           cargo fmt -- --check
           cargo clippy -- -D warnings
           cargo test
-        shell: ${{ matrix.os == 'windows-latest' && 'bash' || 'sh' }}
+        shell: ${{ matrix.shell }}
