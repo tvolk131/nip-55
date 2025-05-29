@@ -15,6 +15,7 @@ nostr-sdk = "0.35"
 serde = "1"
 serde_json = "1"
 tokio = "1"
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
 
 [dev-dependencies]
 uuid = { version = "1.10.0", features = ["v4"] }

@@ -3,9 +3,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::{stream_helper::map_sender, uds_req_res::UdsResponse};
+use crate::stream_helper::map_sender;
 use futures::StreamExt;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub trait JsonRpcServerTransport<SingleOrBatchRequest: AsRef<SingleOrBatch<JsonRpcRequest>>>:
     futures::Stream<
@@ -32,16 +32,6 @@ impl<T> SingleOrBatch<T> {
                 SingleOrBatch::Batch(requests.into_iter().map(map_fn).collect())
             }
         }
-    }
-}
-
-impl<T> UdsResponse for SingleOrBatch<T>
-where
-    T: Serialize + DeserializeOwned + Send + 'static,
-{
-    fn request_parse_error_response() -> Self {
-        // TODO: Implement this.
-        panic!()
     }
 }
 
